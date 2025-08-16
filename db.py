@@ -6,7 +6,7 @@ load_dotenv()
 
 DB_NAME=os.getenv("DB_NAME")
 
-myclient = pymongo.MongoClient(os.getenv("DB_URL"))
+myclient = pymongo.MongoClient(os.getenv("DB_URI"))
 
 def save_course_schedule_to_db(df) -> None:
     """
