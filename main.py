@@ -213,7 +213,7 @@ def fetch_course_detail(academic_year: str, academic_semester: str, course_codes
                         elif key == '選課備註':
                             basic_info['enrollment_notes'] = value
                 
-                print(f"[基本資料] 解析結果: {basic_info}")
+                # print(f"[基本資料] 解析結果: {basic_info}")
                 
                 # 如果沒有解析到結構化資料，保留原始文字
                 if not basic_info:
