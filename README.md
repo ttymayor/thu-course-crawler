@@ -25,6 +25,47 @@
 - 課程代碼（course_code）與系所代碼（department_code）皆強制為 string 型別，確保前導零不遺失
 - 資料庫寫入前會自動清空 collection，僅保留最新資料
 
+## GitHub Actions Workflows
+
+本專案包含以下自動化流程：
+
+### CI/CD Pipeline (`ci.yml`)
+
+- **觸發條件**：推送到 main/develop 分支、Pull Request、每日定時執行
+- **功能**：
+  - 代碼品質檢查（ruff linting）
+  - 類型檢查（mypy）
+  - 自動化測試
+  - 安全掃描（bandit）
+  - 定時資料爬取
+
+### Release and Deploy (`deploy.yml`)
+
+- **觸發條件**：發布 Release、手動觸發
+- **功能**：
+  - 建構部署套件
+  - 上傳部署檔案
+  - 通知部署結果
+
+### 環境設定
+
+在 GitHub repository 設定以下 Secrets：
+
+- `MONGODB_URI`：MongoDB 連線字串
+- `DATABASE_NAME`：資料庫名稱（選用，預設為 `thu_course`）
+
+### Docker 支援
+
+如需容器化部署：
+
+```bash
+# 建構映像
+docker build -t thu-course-crawler .
+
+# 執行容器
+docker run -e MONGODB_URI="your_mongodb_uri" thu-course-crawler
+```
+
 ## 聯絡
 
 如有問題請聯絡專案負責人。
