@@ -1,8 +1,9 @@
 import requests
 from bs4 import BeautifulSoup
-from bs4.element import Tag
+from bs4.element import Tag, NavigableString
 import io
 import pandas as pd
+from typing import Optional, List, Dict, Any
 from utils.dataframe_time_utils import process_course_schedule_df, process_course_info_df
 from db import save_course_schedule_to_db, save_course_info_to_db, save_course_detail_to_db
 
@@ -67,7 +68,7 @@ def fetch_course_info(academic_year: str, academic_semester: str) -> pd.DataFram
         return pd.DataFrame()
 
 
-def fetch_course_detail(academic_year: str, academic_semester: str, course_codes: list[str]) -> pd.DataFrame:
+def fetch_course_detail(academic_year: str, academic_semester: str, course_codes: List[str]) -> pd.DataFrame:
     """
     獲取課程詳細資訊，包含評分方式和授課教師
     回傳巢狀結構的 DataFrame
@@ -163,23 +164,24 @@ def fetch_course_detail(academic_year: str, academic_semester: str, course_codes
                 print(f"提取 meta description 時出錯: {e}")
 
             # 獲取課程概述
-            course_description = soup.select_one('#mainContent > div:nth-child(4) > div:nth-child(2) > p:nth-child(2)')
-            if course_description:
-                course_description = course_description.get_text(strip=True)
+            course_description: Optional[str] = None
+            course_description_element = soup.select_one('#mainContent > div:nth-child(4) > div:nth-child(2) > p:nth-child(2)')
+            if course_description_element:
+                course_description = course_description_element.get_text(strip=True)
                 # print("[課程概述] fetch successfully")
 
             # 獲取基本資料
-            basic_info = {}
+            basic_info: Dict[str, Any] = {}
             basic_info_element = soup.select_one('#mainContent > div:nth-child(5) > div:nth-child(2) > div:nth-child(1) > p')
             if basic_info_element:
                 # 使用 br 標籤來分割內容
-                parts = []
+                parts: List[str] = []
                 for element in basic_info_element.contents:
-                    if hasattr(element, 'strip') and element.name != 'br':
+                    if isinstance(element, NavigableString):
                         text = element.strip()
                         if text:
                             parts.append(text)
-                    elif hasattr(element, 'name') and element.name == 'br':
+                    elif isinstance(element, Tag) and element.name == 'br':
                         # br 標籤作為分隔符號
                         parts.append('\n')
                 

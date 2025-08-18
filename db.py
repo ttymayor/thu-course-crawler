@@ -6,12 +6,12 @@ import os
 
 load_dotenv()
 
-DB_NAME=os.getenv("DB_NAME")
+DB_NAME = os.getenv("DB_NAME")
 
-myclient = pymongo.MongoClient(os.getenv("DB_URI"))
+myclient: pymongo.MongoClient[dict] = pymongo.MongoClient(os.getenv("DB_URI"))
 
 
-def save_course_schedule_to_db(df) -> None:
+def save_course_schedule_to_db(df: pd.DataFrame) -> None:
     """
     將 course_schedule DataFrame 寫入 MongoDB 資料庫
     """
@@ -33,7 +33,7 @@ def save_course_schedule_to_db(df) -> None:
         print(f"Error saving course schedule to DB: {e}")
 
 
-def save_course_info_to_db(df) -> None:
+def save_course_info_to_db(df: pd.DataFrame) -> None:
     """
     將 course_info DataFrame 寫入 MongoDB 資料庫
     """
@@ -55,7 +55,7 @@ def save_course_info_to_db(df) -> None:
         print(f"Error saving course info to DB: {e}")
 
 
-def save_course_detail_to_db(df) -> None:
+def save_course_detail_to_db(df: pd.DataFrame) -> None:
     """
     將 course_detail DataFrame（已包含巢狀結構）寫入 MongoDB 資料庫
     """

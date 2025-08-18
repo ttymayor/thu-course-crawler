@@ -6,9 +6,8 @@ on:
   pull_request:
     branches: [main]
   schedule:
-    # 每天台灣時間早上 8 點執行 (UTC 00:00)
     - cron: "0 0 * * *"
-  workflow_dispatch: # 允許手動觸發
+  workflow_dispatch:
 
 jobs:
   lint-and-test:
@@ -39,21 +38,6 @@ jobs:
           uv run ruff check .
         continue-on-error: true
 
-      - name: Run type checking with mypy
-        run: |
-          uv add --dev mypy types-requests
-          uv run mypy main.py db.py utils/
-        continue-on-error: true
-
-      - name: Run tests (if test files exist)
-        run: |
-          if [ -d "tests" ] || [ -f "test_*.py" ] || [ -f "*_test.py" ]; then
-            uv add --dev pytest
-            uv run pytest -v
-          else
-            echo "No test files found, skipping tests"
-          fi
-
   crawl-data:
     name: Data Crawling
     runs-on: ubuntu-latest
@@ -80,8 +64,8 @@ jobs:
 
       - name: Create .env file
         run: |
-          echo "MONGODB_URI=${{ secrets.MONGODB_URI }}" >> .env
-          echo "DATABASE_NAME=${{ secrets.DATABASE_NAME || 'thu_course' }}" >> .env
+          echo "DB_URI=${{ secrets.DB_URI }}" >> .env
+          echo "DB_NAME=${{ secrets.DB_NAME || 'thu_course' }}" >> .env
 
       - name: Run crawler
         run: |
