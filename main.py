@@ -14,8 +14,7 @@ academic_semester = "1"
 
 def main() -> None:
     """獲取選課時間表"""
-    course_url = "https://course.thu.edu.tw/index"
-    course_schedule_df = fetch_course_selection_schedule(course_url)
+    course_schedule_df = fetch_course_selection_schedule()
     course_schedule_df = process_course_schedule_df(course_schedule_df)
     save_course_schedule_to_db(course_schedule_df)
 
@@ -30,9 +29,9 @@ def main() -> None:
     save_course_detail_to_db(course_detail_df)
 
 
-def fetch_course_selection_schedule(course_url: str) -> pd.DataFrame:
+def fetch_course_selection_schedule() -> pd.DataFrame:
     try: 
-        response = requests.get(course_url)
+        response = requests.get("https://course.thu.edu.tw/index")
         soup = BeautifulSoup(response.text, 'html.parser')
         table = soup.find('table')
 
@@ -81,6 +80,12 @@ def fetch_course_detail(academic_year: str, academic_semester: str, course_codes
             response = requests.get(f"https://course.thu.edu.tw/view/{academic_year}/{academic_semester}/{course_code}/")
             soup = BeautifulSoup(response.text, 'html.parser')
             
+            # 找尋是否停開
+            closed_notice = soup.find(class_="warning closable")
+            if closed_notice:
+                course_details.append({'course_code': course_code, 'is_closed': True})
+                continue
+
             # 找到第一個表格（評分方式）
             table = soup.find('table')
             if not isinstance(table, Tag):
@@ -222,6 +227,7 @@ def fetch_course_detail(academic_year: str, academic_semester: str, course_codes
             # 建立課程詳細資料
             course_detail = {
                 'course_code': course_code,
+                'is_closed': bool(closed_notice),
                 'teachers': teacher_list,
                 'grading_items': grading_items,
                 'selection_records': selection_records,

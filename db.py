@@ -88,6 +88,7 @@ def save_course_detail_to_db(df: pd.DataFrame) -> None:
             
             document = {
                 "course_code": row['course_code'],
+                "is_closed": row.get('is_closed', False),
                 "teachers": row['teachers'] if isinstance(row['teachers'], list) else [],
                 "grading_items": grading_items,
                 "selection_records": row['selection_records'] if isinstance(row['selection_records'], list) else [],
