@@ -37,13 +37,3 @@ jobs:
       - name: Run crawler
         run: |
           uv run main.py
-
-      - name: Upload logs (if any)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: crawler-logs-${{ github.run_number }}
-          path: |
-            *.log
-            logs/
-          retention-days: 7
