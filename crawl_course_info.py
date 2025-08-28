@@ -4,22 +4,26 @@ from bs4.element import Tag, NavigableString
 import pandas as pd
 from typing import Optional, List, Dict, Any
 import io
+from dotenv import load_dotenv
+import os
 from db import save_course_info_to_db, save_course_detail_to_db
 from utils.dataframe_time_utils import process_course_info_df
 
+load_dotenv()
 
-academic_year = "114"
-academic_semester = "1"
+DB_ENV = os.getenv("DB_ENV", "prod")
+ACADEMIC_YEAR = os.getenv("ACADEMIC_YEAR", "114")
+ACADEMIC_SEMESTER = os.getenv("ACADEMIC_SEMESTER", "1")
 
 
 def main() -> None:
-    """獲取課程資訊和詳細資訊 - 每三天執行一次"""
+    """獲取課程資訊和詳細資訊"""
     print(f"開始執行課程爬蟲 - {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
     try:
         # 1. 爬取課程基本資訊
         print("1. 爬取課程基本資訊...")
-        course_info_df = fetch_course_info(academic_year, academic_semester)
+        course_info_df = fetch_course_info(ACADEMIC_YEAR, ACADEMIC_SEMESTER)
         course_info_df = process_course_info_df(course_info_df)
         save_course_info_to_db(course_info_df)
         print(f"   [OK] 課程基本資訊爬取完成，共 {len(course_info_df)} 個課程")
@@ -27,9 +31,10 @@ def main() -> None:
         # 2. 爬取課程詳細資訊
         print("2. 爬取課程詳細資訊...")
         course_codes = course_info_df["course_code"].tolist()
-        course_codes = course_codes[:20]
+        if DB_ENV == "dev":
+            course_codes = course_codes[:25]
         course_detail_df = fetch_course_detail(
-            academic_year, academic_semester, course_codes
+            ACADEMIC_YEAR, ACADEMIC_SEMESTER, course_codes
         )
         save_course_detail_to_db(course_detail_df)
         print(f"   [OK] 課程詳細資訊爬取完成，共 {len(course_detail_df)} 個課程")
