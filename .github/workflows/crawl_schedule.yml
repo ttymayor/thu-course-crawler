@@ -1,16 +1,14 @@
-name: Run Course Crawler
+name: crawl_schedule
 
 on:
   schedule:
-    # 每天台灣時間早上 8 點執行 (UTC 00:00)
     - cron: "0 0 * * *"
   workflow_dispatch:
 
 jobs:
-  run-crawler:
-    name: Execute Course Crawler
+  crawl-schedule:
+    name: crawl_schedule
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -34,6 +32,6 @@ jobs:
           echo "DB_URI=${{ secrets.DB_URI }}" >> .env
           echo "DB_NAME=${{ secrets.DB_NAME || 'thu_course' }}" >> .env
 
-      - name: Run crawler
+      - name: Run schedule crawler
         run: |
-          uv run main.py
+          uv run crawl_schedule.py

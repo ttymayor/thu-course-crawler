@@ -1,0 +1,37 @@
+name: crawl_course_info
+
+on:
+  schedule:
+    - cron: "0 0 */3 * *"
+  workflow_dispatch:
+
+jobs:
+  crawl-course-info:
+    name: crawl_course_info
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Install dependencies
+        run: |
+          uv sync
+
+      - name: Create .env file
+        run: |
+          echo "DB_URI=${{ secrets.DB_URI }}" >> .env
+          echo "DB_NAME=${{ secrets.DB_NAME || 'thu_course' }}" >> .env
+
+      - name: Run course crawler
+        run: |
+          uv run crawl_course_info.py
