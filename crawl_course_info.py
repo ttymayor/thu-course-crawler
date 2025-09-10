@@ -154,7 +154,10 @@ def fetch_course_detail(
             )
             if teacher_section:
                 teacher_links = teacher_section.find_all("a")
-                teacher_list = [a.get_text(strip=True) for a in teacher_links]
+                teacher_list = [
+                    a.get_text(strip=True) if a.get_text(strip=True) != "" else None
+                    for a in teacher_links
+                ]
 
             # 獲取教學目標（從 meta name="description" 取得）
             teaching_goal = None
