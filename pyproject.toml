@@ -1,7 +1,7 @@
 [project]
 name = "thu-course-crawler"
 version = "0.1.0"
-description = "Add your description here"
+description = "THU Course Crawler - A tool for crawling course information from Tunghai University"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
