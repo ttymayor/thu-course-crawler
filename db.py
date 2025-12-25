@@ -1,4 +1,5 @@
-import math  # 新增: 用於判斷 NaN
+import logging
+import math
 import os
 
 import pandas as pd
@@ -6,10 +7,17 @@ import pymongo
 from dotenv import load_dotenv
 from pymongo import UpdateOne
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger(__name__)
+
 load_dotenv()
 
 DB_NAME = os.getenv("DB_NAME")
-DB_ENV = os.getenv("DB_ENV", "prod")  # 預設為生產環境
+DB_ENV = os.getenv("DB_ENV", "prod")
 
 myclient: pymongo.MongoClient[dict] = pymongo.MongoClient(os.getenv("DB_URI"))
 
@@ -27,7 +35,7 @@ def save_merged_courses_to_db(df: pd.DataFrame) -> None:
     資料表名稱預設為: courses (或 courses_dev)
     """
     if df.empty:
-        print("Merged course DataFrame is empty")
+        logger.error("Merged course DataFrame is empty")
         return
 
     assert DB_NAME, "DB_NAME must be set in .env file"
@@ -35,7 +43,7 @@ def save_merged_courses_to_db(df: pd.DataFrame) -> None:
     try:
         # 使用新的集合名稱，例如 'courses' 來存放完整的資料
         collection_name = get_collection_name("courses")
-        print(f"Saving merged courses to DB (collection: {collection_name})...")
+        logger.info(f"Saving merged courses to DB (collection: {collection_name})...")
 
         mydb = myclient[DB_NAME]
         collection = mydb[collection_name]
@@ -114,14 +122,16 @@ def save_merged_courses_to_db(df: pd.DataFrame) -> None:
         # 執行批次寫入
         if ops:
             result = collection.bulk_write(ops)
-            print(
-                f"   [Write] Matched: {result.matched_count}, Modified: {result.modified_count}, Upserted: {result.upserted_count}"
+            logger.info(
+                f"Write Matched: {result.matched_count}, Modified: {result.modified_count}, Upserted: {result.upserted_count}"
             )
 
-        print(f"Success saving merged courses to DB (collection: {collection_name})")
+        logger.info(
+            f"Success saving merged courses to DB (collection: {collection_name})"
+        )
 
     except Exception as e:
-        print(f"Error saving merged courses to DB: {e}")
+        logger.error(f"Error saving merged courses to DB: {e}")
         # 在開發環境印出詳細錯誤以便除錯
         import traceback
 
@@ -137,7 +147,7 @@ def save_course_schedule_to_db(df: pd.DataFrame) -> None:
 
     try:
         collection_name = get_collection_name("course_schedule")
-        print(f"Saving course schedule to DB (collection: {collection_name})...")
+        logger.info(f"Saving course schedule to DB (collection: {collection_name})...")
         mydb = myclient[DB_NAME]
         collection = mydb[collection_name]
         # DataFrame 轉 dict 並批次寫入
@@ -145,9 +155,11 @@ def save_course_schedule_to_db(df: pd.DataFrame) -> None:
 
         if records:
             collection.update_many({}, {"$set": {"data": records}})
-        print(f"Success saving course schedule to DB (collection: {collection_name})")
+        logger.info(
+            f"Success saving course schedule to DB (collection: {collection_name})"
+        )
     except Exception as e:
-        print(f"Error saving course schedule to DB: {e}")
+        logger.error(f"Error saving course schedule to DB: {e}")
 
 
 def save_course_info_to_db(df: pd.DataFrame) -> None:
@@ -156,14 +168,14 @@ def save_course_info_to_db(df: pd.DataFrame) -> None:
     """
 
     if df.empty:
-        print("Course info DataFrame is empty")
+        logger.info("Course info DataFrame is empty")
         return
 
     assert DB_NAME, "DB_NAME must be set in .env file"
 
     try:
         collection_name = get_collection_name("course_info")
-        print(f"Saving course info to DB (collection: {collection_name})...")
+        logger.info(f"Saving course info to DB (collection: {collection_name})...")
         mydb = myclient[DB_NAME]
         collection = mydb[collection_name]
         # 創建索引
@@ -183,9 +195,9 @@ def save_course_info_to_db(df: pd.DataFrame) -> None:
 
         if ops:
             collection.bulk_write(ops)
-        print(f"Success saving course info to DB (collection: {collection_name})")
+        logger.info(f"Success saving course info to DB (collection: {collection_name})")
     except Exception as e:
-        print(f"Error saving course info to DB: {e}")
+        logger.error(f"Error saving course info to DB: {e}")
 
 
 def save_course_detail_to_db(df: pd.DataFrame) -> None:
@@ -194,14 +206,14 @@ def save_course_detail_to_db(df: pd.DataFrame) -> None:
     """
 
     if df.empty:
-        print("Course detail DataFrame is empty")
+        logger.info("Course detail DataFrame is empty")
         return
 
     assert DB_NAME, "DB_NAME must be set in .env file"
 
     try:
         collection_name = get_collection_name("course_detail")
-        print(f"Saving course detail to DB (collection: {collection_name})...")
+        logger.info(f"Saving course detail to DB (collection: {collection_name})...")
         mydb = myclient[DB_NAME]
         collection = mydb[collection_name]
         collection.create_index("course_code", unique=True)
@@ -252,9 +264,11 @@ def save_course_detail_to_db(df: pd.DataFrame) -> None:
                 upsert=True,
             )
 
-        print(f"Success saving course detail to DB (collection: {collection_name})")
+        logger.info(
+            f"Success saving course detail to DB (collection: {collection_name})"
+        )
     except Exception as e:
-        print(f"Error saving course detail to DB: {e}")
+        logger.error(f"Error saving course detail to DB: {e}")
 
 
 def get_course_codes_from_db() -> list[str]:
@@ -268,5 +282,5 @@ def get_course_codes_from_db() -> list[str]:
         course_codes = collection.distinct("course_code")
         return course_codes
     except Exception as e:
-        print(f"Error getting course codes from DB: {e}")
+        logger.error(f"Error getting course codes from DB: {e}")
         return []

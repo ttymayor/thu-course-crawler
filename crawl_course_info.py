@@ -1,15 +1,25 @@
+import asyncio
 import io
+import logging
 import os
 from typing import Any, Dict, List, Optional
 
+import aiohttp
 import pandas as pd
-import requests
 from bs4 import BeautifulSoup
 from bs4.element import NavigableString, Tag
 from dotenv import load_dotenv
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    SpinnerColumn,
+    TaskProgressColumn,
+    TextColumn,
+    TimeElapsedColumn,
+    TimeRemainingColumn,
+)
 
-# 假設你的 db 模組原本是分開存的，若要存合併後的表，你可能需要寫一個新的 save function
-# from db import save_merged_course_to_db
 from db import (
     save_course_detail_to_db,
     save_course_info_to_db,
@@ -17,115 +27,126 @@ from db import (
 )
 from utils.dataframe_time_utils import process_course_info_df
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger(__name__)
+
 load_dotenv()
 
 DB_ENV = os.getenv("DB_ENV", "prod")
 ACADEMIC_YEAR = os.getenv("ACADEMIC_YEAR", "114")
 ACADEMIC_SEMESTER = os.getenv("ACADEMIC_SEMESTER", "1")
 DEV_DATA_LIMIT = int(os.getenv("DEV_DATA_LIMIT", "10"))
+CONCURRENCY_LIMIT = 5
 
 
-def main() -> None:
+async def main() -> None:
     """獲取課程資訊和詳細資訊並整合為一張表"""
-    print(f"開始執行課程爬蟲 - {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info("[crawl_course_info] Start executing course crawler")
 
     try:
         # --- 1. 爬取課程基本資訊 ---
-        print("1. 爬取課程基本資訊...")
-        course_info_df = fetch_course_info(ACADEMIC_YEAR, ACADEMIC_SEMESTER)
-        course_info_df = process_course_info_df(course_info_df)
+        logger.info("[crawl_course_info] fetching course basic info...")
+        course_info_df = await fetch_course_info(ACADEMIC_YEAR, ACADEMIC_SEMESTER)
 
-        # 這裡依舊可以選擇先存基本資訊，或者等合併後一次存
+        if course_info_df.empty:
+            logger.error(
+                "[crawl_course_info] Failed to fetch course info, terminating program."
+            )
+            return
+
+        course_info_df = process_course_info_df(course_info_df)
         save_course_info_to_db(course_info_df)
-        print(f"   [OK] 課程基本資訊爬取完成，共 {len(course_info_df)} 個課程")
+        logger.info(f"[crawl_course_info] Done! Saved {len(course_info_df)} courses")
 
         # --- 2. 爬取課程詳細資訊 ---
-        print("2. 爬取課程詳細資訊...")
+        logger.info("[crawl_course_info] fetching course details...")
         course_codes = course_info_df["course_code"].tolist()
 
-        # 開發模式下限制筆數
         if DB_ENV == "dev":
             course_codes = course_codes[:DEV_DATA_LIMIT]
-            print(f"   [DEV MODE] 僅爬取前 {DEV_DATA_LIMIT} 筆詳細資料")
+            logger.warning(f"[DEV MODE] Fetching {DEV_DATA_LIMIT} course details")
 
-        course_detail_df = fetch_course_detail(
+        # 呼叫並發爬蟲函式
+        course_detail_df = await fetch_course_details_concurrently(
             ACADEMIC_YEAR, ACADEMIC_SEMESTER, course_codes
         )
-        # 這裡依舊維持你原本的儲存邏輯
+
         save_course_detail_to_db(course_detail_df)
-        print(f"   [OK] 課程詳細資訊爬取完成，共 {len(course_detail_df)} 個課程")
+        logger.info(f"[crawl_course_info] Done! Saved {len(course_detail_df)} courses")
 
         # --- 3. 資料整併 (Merge) ---
-        print("3. 整合兩張資料表...")
-
-        # 使用 left join: 保留所有 course_info 的資料，將 detail 對應上去
-        # 如果該課程沒有 detail (例如 dev 模式沒爬到，或是爬取失敗)，欄位會是 NaN
+        logger.info("[crawl_course_info] merging dataframes...")
         merged_df = pd.merge(
             course_info_df, course_detail_df, on="course_code", how="left"
         )
 
-        print(f"   [OK] 資料整合完成，總欄位數: {len(merged_df.columns)}")
-        print(f"   整合後資料範例:\n{merged_df.head(1)}")
-
+        logger.info(f"[crawl_course_info] Done! Merged {len(merged_df)} courses")
         save_merged_courses_to_db(merged_df)
 
-        print("課程爬蟲任務完成")
+        logger.info("[crawl_course_info] Done! Saved merged courses")
 
     except Exception as e:
-        print(f"課程爬蟲失敗: {e}")
-        # 在開發時印出完整的 traceback 會更有幫助
+        logger.error(f"Course crawling failed: {e}")
         import traceback
 
         traceback.print_exc()
 
-    print(f"課程爬蟲任務完成 - {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info("[crawl_course_info] Course crawling completed!")
 
 
-def fetch_course_info(academic_year: str, academic_semester: str) -> pd.DataFrame:
-    # ... (保持原本的程式碼)
-    """獲取課程基本資訊"""
+async def fetch_course_info(academic_year: str, academic_semester: str) -> pd.DataFrame:
+    """獲取課程基本資訊 (使用 aiohttp)"""
+    url = f"https://course.thu.edu.tw/opendatadownload/list/{academic_year}/{academic_semester}/"
     try:
-        response = requests.get(
-            f"https://course.thu.edu.tw/opendatadownload/list/{academic_year}/{academic_semester}/"
-        )
-        df = pd.read_csv(
-            io.StringIO(response.text), dtype={"選課代碼": str, "開課系所代碼": str}
-        )
-        return df
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as response:
+                response.raise_for_status()
+                text = await response.text()
+                df = pd.read_csv(
+                    io.StringIO(text), dtype={"選課代碼": str, "開課系所代碼": str}
+                )
+                return df
     except Exception as e:
-        print(f"Error fetching course info: {e}")
+        logger.error(f"Error fetching course info: {e}")
         return pd.DataFrame()
 
 
-def fetch_course_detail(
-    academic_year: str, academic_semester: str, course_codes: List[str]
-) -> pd.DataFrame:
-    # ... (保持原本的程式碼，這裡不需要變動)
+async def fetch_single_course_detail(
+    session: aiohttp.ClientSession,
+    semaphore: asyncio.Semaphore,
+    academic_year: str,
+    academic_semester: str,
+    course_code: str,
+) -> Optional[Dict[str, Any]]:
     """
-    獲取課程詳細資訊，包含評分方式和授課教師
-    回傳巢狀結構的 DataFrame
+    爬取「單一」課程詳細資訊的邏輯
     """
-    course_details = []
-    print(f"Fetching course details for {len(course_codes)} courses...")
+    url = f"https://course.thu.edu.tw/view/{academic_year}/{academic_semester}/{course_code}/"
 
-    for course_code in course_codes:
+    async with semaphore:
         try:
-            response = requests.get(
-                f"https://course.thu.edu.tw/view/{academic_year}/{academic_semester}/{course_code}/"
-            )
-            soup = BeautifulSoup(response.text, "html.parser")
+            async with session.get(url) as response:
+                if response.status != 200:
+                    # 失敗時可以 print，但建議使用 logging 避免干擾進度條
+                    # print(f"Failed to fetch {course_code}, status: {response.status}")
+                    return None
+                html = await response.text()
 
-            # 找尋是否停開
+            # --- BeautifulSoup 解析邏輯 ---
+            soup = BeautifulSoup(html, "html.parser")
+
             closed_notice = soup.find(class_="warning closable")
             if closed_notice:
-                course_details.append({"course_code": course_code, "is_closed": True})
-                continue
+                return {"course_code": course_code, "is_closed": True}
 
-            # 找到第一個表格（評分方式）
             table = soup.find("table")
             if not isinstance(table, Tag):
-                print(f"No table found for course {course_code}")
-                continue
+                # print(f"No table found for course {course_code}")
+                return None
 
             rows = table.find_all("tr")
             grading_data = []
@@ -138,11 +159,10 @@ def fetch_course_detail(
                     if cols:
                         grading_data.append(cols)
 
-            # 獲取評分方式
             grading_items = []
             if grading_data and len(grading_data) > 1:
-                for row in grading_data[1:]:  # 跳過標題列
-                    if len(row) >= 3:  # 確保有足夠欄位
+                for row in grading_data[1:]:
+                    if len(row) >= 3:
                         grading_item = {
                             "method": row[0],
                             "percentage": row[1],
@@ -150,9 +170,7 @@ def fetch_course_detail(
                         }
                         grading_items.append(grading_item)
 
-            # 獲取選課紀錄
             selection_records = []
-            # 從 Google Charts script 中提取資料
             scripts = soup.find_all("script")
             for script in scripts:
                 if isinstance(script, Tag):
@@ -160,31 +178,26 @@ def fetch_course_detail(
                     if "google.visualization.arrayToDataTable" in script_text:
                         import re
 
-                        # 尋找 arrayToDataTable 中的資料
                         pattern = r"google\.visualization\.arrayToDataTable\(\s*\[\s*([\s\S]*?)\s*\]\s*\)"
                         match = re.search(pattern, script_text, re.DOTALL)
-
                         if match:
                             data_content = match.group(1)
-
-                            # 提取每一行資料（跳過標題列）
                             row_pattern = (
                                 r"\[\s*'([^']+)',\s*(\d+),\s*(\d+),\s*(\d+)\s*\]"
                             )
                             matches = re.findall(row_pattern, data_content)
-
                             for match_data in matches:
                                 date, enrolled, remaining, registered = match_data
-                                selection_record = {
-                                    "date": date,
-                                    "enrolled": int(enrolled),
-                                    "remaining": int(remaining),
-                                    "registered": int(registered),
-                                }
-                                selection_records.append(selection_record)
+                                selection_records.append(
+                                    {
+                                        "date": date,
+                                        "enrolled": int(enrolled),
+                                        "remaining": int(remaining),
+                                        "registered": int(registered),
+                                    }
+                                )
                             break
 
-            # 獲取授課教師
             teacher_list = []
             teacher_section = soup.select_one(
                 "#mainContent > div:nth-child(4) > div:nth-child(1)"
@@ -196,60 +209,47 @@ def fetch_course_detail(
                     for a in teacher_links
                 ]
 
-            # 獲取教學目標（從 meta name="description" 取得）
             teaching_goal = None
             try:
                 meta_description = soup.find("meta", attrs={"name": "description"})
-                # assert meta_description, "Meta description not found" # 建議註解掉 assert，避免中斷迴圈
                 if meta_description and hasattr(meta_description, "attrs"):
                     teaching_goal = meta_description.attrs.get("content", "").strip()
-                else:
-                    # print("Meta description does not have 'attrs' attribute or is None")
-                    pass
-            except Exception as e:
-                print(f"提取 meta description 時出錯: {e}")
+            except Exception:
+                pass
 
-            # 獲取課程概述
-            course_description: Optional[str] = None
+            course_description = None
             course_description_element = soup.select_one(
                 "#mainContent > div:nth-child(4) > div:nth-child(2) > p:nth-child(2)"
             )
             if course_description_element:
                 course_description = course_description_element.get_text(strip=True)
 
-            # 獲取基本資料
-            basic_info: Dict[str, Any] = {}
+            basic_info = {}
             basic_info_element = soup.select_one(
                 "#mainContent > div:nth-child(5) > div:nth-child(2) > div:nth-child(1) > p"
             )
             if basic_info_element:
-                # 使用 br 標籤來分割內容
-                parts: List[str] = []
+                parts = []
                 for element in basic_info_element.contents:
                     if isinstance(element, NavigableString):
                         text = element.strip()
                         if text:
                             parts.append(text)
                     elif isinstance(element, Tag) and element.name == "br":
-                        # br 標籤作為分隔符號
                         parts.append("\n")
 
-                # 合併所有部分並分行處理
                 basic_info_text = "".join(parts)
                 lines = [
                     line.strip() for line in basic_info_text.split("\n") if line.strip()
                 ]
 
-                # 解析基本資料的各個欄位
                 for line in lines:
                     if "：" in line:
                         key, value = line.split("：", 1)
                         key = key.strip()
                         value = value.strip()
-
-                        if key == "選修課" or key == "必修課":
+                        if key in ["選修課", "必修課"]:
                             basic_info["course_type"] = key
-                            # 處理 "必修課，學分數：3-0" 這種格式
                             if "，學分數" in line:
                                 credits_part = (
                                     line.split("，學分數：")[1]
@@ -268,12 +268,12 @@ def fetch_course_detail(
                         elif key == "選課備註":
                             basic_info["enrollment_notes"] = value
 
-                # 如果沒有解析到結構化資料，保留原始文字
                 if not basic_info:
                     basic_info["raw_text"] = basic_info_text
 
-            # 建立課程詳細資料
-            course_detail = {
+            # 重要：將原本的 print 移除，以免干擾進度條顯示
+            # print(f"Success fetching course detail for {course_code}")
+            return {
                 "course_code": course_code,
                 "is_closed": bool(closed_notice),
                 "teachers": teacher_list,
@@ -283,14 +283,61 @@ def fetch_course_detail(
                 "course_description": course_description,
                 "basic_info": basic_info,
             }
-            course_details.append(course_detail)
-            print(f"Success fetching course detail for {course_code}")
-        except Exception as e:
-            print(f"Error fetching course detail for {course_code}: {e}")
-            continue
 
-    return pd.DataFrame(course_details)
+        except Exception as e:
+            # 使用 print 會破壞進度條，實務上建議收集錯誤最後顯示，或寫入 log 檔
+            # print(f"Error processing {course_code}: {e}")
+            return None
+
+
+async def fetch_course_details_concurrently(
+    academic_year: str, academic_semester: str, course_codes: List[str]
+) -> pd.DataFrame:
+    """
+    管理所有並發任務的函式，並加入 Rich Progress Bar
+    """
+
+    # 定義進度條樣式
+    progress = Progress(
+        SpinnerColumn(),  # 轉圈圈動畫
+        TextColumn("[progress.description]{task.description}"),  # 任務描述
+        BarColumn(),  # 進度條本體
+        TaskProgressColumn(),  # 百分比 (e.g., 50%)
+        MofNCompleteColumn(),  # 完成數/總數 (e.g., 1500/3000)
+        TimeElapsedColumn(),  # 已過時間
+        TimeRemainingColumn(),  # 剩餘時間估算
+    )
+
+    semaphore = asyncio.Semaphore(CONCURRENCY_LIMIT)
+
+    async with aiohttp.ClientSession() as session:
+        # 使用 progress context manager
+        with progress:
+            task_id = progress.add_task(
+                f"[cyan]fetching course details (concurrency: {CONCURRENCY_LIMIT})...",
+                total=len(course_codes),
+            )
+
+            # 建立一個 wrapper 來處理單個任務完成後的進度更新
+            async def worker(code: str):
+                result = await fetch_single_course_detail(
+                    session, semaphore, academic_year, academic_semester, code
+                )
+                # 每完成一個任務，進度條 +1
+                progress.advance(task_id)
+                return result
+
+            # 建立所有 worker 任務
+            tasks = [worker(code) for code in course_codes]
+
+            # 等待所有任務完成
+            results = await asyncio.gather(*tasks)
+
+    # 過濾掉失敗的 (None) 結果
+    valid_results = [r for r in results if r is not None]
+
+    return pd.DataFrame(valid_results)
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

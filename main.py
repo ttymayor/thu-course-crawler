@@ -1,44 +1,52 @@
+import logging
 import subprocess
 import sys
-from datetime import datetime
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger(__name__)
 
 
 def main() -> None:
     """主函數 - 執行所有爬蟲任務"""
-    print(f"開始執行完整爬蟲任務 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("=" * 30)
+    logger.info("[main] Starting crawling tasks")
 
     try:
-        # 1. 執行選課時間表爬蟲
-        print("1. 執行選課時間表爬蟲...")
-        result = subprocess.run(
-            [sys.executable, "crawl_schedule.py"], capture_output=True, text=True
+        # --- 1. 執行選課時間表爬蟲 ---
+        logger.info("[main] 1. Executing crawl_schedule.py...")
+        result_schedule = subprocess.run(
+            [sys.executable, "crawl_schedule.py"],
+            capture_output=False,
+            text=True,
         )
-        if result.returncode == 0:
-            print("   [OK] 選課時間表爬蟲完成")
-            print(result.stdout)
+
+        if result_schedule.returncode == 0:
+            logger.info("[main] 1. Done")
         else:
-            print(f"   [ERROR] 選課時間表爬蟲失敗: {result.stderr}")
+            logger.error(f"Schedule crawling failed: {result_schedule.stderr}")
             return
 
-        # 2. 執行課程爬蟲（資訊+詳細資訊）
-        print("2. 執行課程爬蟲...")
-        result = subprocess.run(
-            [sys.executable, "crawl_course_info.py"], capture_output=True, text=True
+        # --- 2. 執行課程爬蟲（資訊+詳細資訊） ---
+        logger.info("[main] 2. Executing crawl_course_info.py...")
+        result_course = subprocess.run(
+            [sys.executable, "crawl_course_info.py"],
+            capture_output=False,
+            text=True,
         )
-        if result.returncode == 0:
-            print("   [OK] 課程爬蟲完成")
-            print(result.stdout)
+
+        if result_course.returncode == 0:
+            logger.info("[main] 2. Done")
         else:
-            print(f"   [ERROR] 課程爬蟲失敗: {result.stderr}")
+            logger.error(f"Course crawling failed: {result_course.stderr}")
             return
 
-        print("=" * 30)
-        print(f"所有爬蟲任務完成 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print("=" * 30)
+        logger.info("[main] All crawling tasks completed.")
 
     except Exception as e:
-        print(f"爬蟲任務執行失敗: {e}")
+        logger.error(f"爬蟲任務執行失敗: {e}")
         raise
 
 

@@ -1,3 +1,5 @@
+import logging
+
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
@@ -6,24 +8,26 @@ from bs4.element import Tag
 from db import save_course_schedule_to_db
 from utils.dataframe_time_utils import process_course_schedule_df
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger(__name__)
+
 
 def main() -> None:
     """獲取選課時間表"""
-    print(
-        f"開始執行選課時間表爬蟲 - {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}"
-    )
+    logger.info("[crawl_schedule] Starting course schedule crawler")
 
     try:
         course_schedule_df = fetch_course_selection_schedule()
         course_schedule_df = process_course_schedule_df(course_schedule_df)
         save_course_schedule_to_db(course_schedule_df)
-        print("選課時間表爬蟲完成")
     except Exception as e:
-        print(f"選課時間表爬蟲失敗: {e}")
+        logger.error(f"[crawl_schedule] Course schedule crawler failed: {e}")
 
-    print(
-        f"選課時間表爬蟲任務完成 - {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}"
-    )
+    logger.info("[crawl_schedule] Course schedule crawler task completed")
 
 
 def fetch_course_selection_schedule() -> pd.DataFrame:
@@ -52,7 +56,7 @@ def fetch_course_selection_schedule() -> pd.DataFrame:
             df = pd.DataFrame()
         return df
     except Exception as e:
-        print(f"Error fetching course selection schedule: {e}")
+        logger.error(f"Error fetching course selection schedule: {e}")
         return pd.DataFrame()
 
 
