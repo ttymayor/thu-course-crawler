@@ -1,9 +1,10 @@
+import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 from bs4.element import Tag
-import pandas as pd
-from utils.dataframe_time_utils import process_course_schedule_df
+
 from db import save_course_schedule_to_db
+from utils.dataframe_time_utils import process_course_schedule_df
 
 
 def main() -> None:

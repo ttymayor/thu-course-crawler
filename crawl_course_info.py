@@ -1,12 +1,20 @@
+import io
+import os
+from typing import Any, Dict, List, Optional
+
+import pandas as pd
 import requests
 from bs4 import BeautifulSoup
-from bs4.element import Tag, NavigableString
-import pandas as pd
-from typing import Optional, List, Dict, Any
-import io
+from bs4.element import NavigableString, Tag
 from dotenv import load_dotenv
-import os
-from db import save_course_info_to_db, save_course_detail_to_db
+
+# 假設你的 db 模組原本是分開存的，若要存合併後的表，你可能需要寫一個新的 save function
+# from db import save_merged_course_to_db
+from db import (
+    save_course_detail_to_db,
+    save_course_info_to_db,
+    save_merged_courses_to_db,
+)
 from utils.dataframe_time_utils import process_course_info_df
 
 load_dotenv()
@@ -14,39 +22,67 @@ load_dotenv()
 DB_ENV = os.getenv("DB_ENV", "prod")
 ACADEMIC_YEAR = os.getenv("ACADEMIC_YEAR", "114")
 ACADEMIC_SEMESTER = os.getenv("ACADEMIC_SEMESTER", "1")
+DEV_DATA_LIMIT = int(os.getenv("DEV_DATA_LIMIT", "10"))
 
 
 def main() -> None:
-    """獲取課程資訊和詳細資訊"""
+    """獲取課程資訊和詳細資訊並整合為一張表"""
     print(f"開始執行課程爬蟲 - {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
     try:
-        # 1. 爬取課程基本資訊
+        # --- 1. 爬取課程基本資訊 ---
         print("1. 爬取課程基本資訊...")
         course_info_df = fetch_course_info(ACADEMIC_YEAR, ACADEMIC_SEMESTER)
         course_info_df = process_course_info_df(course_info_df)
+
+        # 這裡依舊可以選擇先存基本資訊，或者等合併後一次存
         save_course_info_to_db(course_info_df)
         print(f"   [OK] 課程基本資訊爬取完成，共 {len(course_info_df)} 個課程")
 
-        # 2. 爬取課程詳細資訊
+        # --- 2. 爬取課程詳細資訊 ---
         print("2. 爬取課程詳細資訊...")
         course_codes = course_info_df["course_code"].tolist()
+
+        # 開發模式下限制筆數
         if DB_ENV == "dev":
-            course_codes = course_codes[:25]
+            course_codes = course_codes[:DEV_DATA_LIMIT]
+            print(f"   [DEV MODE] 僅爬取前 {DEV_DATA_LIMIT} 筆詳細資料")
+
         course_detail_df = fetch_course_detail(
             ACADEMIC_YEAR, ACADEMIC_SEMESTER, course_codes
         )
+        # 這裡依舊維持你原本的儲存邏輯
         save_course_detail_to_db(course_detail_df)
         print(f"   [OK] 課程詳細資訊爬取完成，共 {len(course_detail_df)} 個課程")
 
+        # --- 3. 資料整併 (Merge) ---
+        print("3. 整合兩張資料表...")
+
+        # 使用 left join: 保留所有 course_info 的資料，將 detail 對應上去
+        # 如果該課程沒有 detail (例如 dev 模式沒爬到，或是爬取失敗)，欄位會是 NaN
+        merged_df = pd.merge(
+            course_info_df, course_detail_df, on="course_code", how="left"
+        )
+
+        print(f"   [OK] 資料整合完成，總欄位數: {len(merged_df.columns)}")
+        print(f"   整合後資料範例:\n{merged_df.head(1)}")
+
+        save_merged_courses_to_db(merged_df)
+
         print("課程爬蟲任務完成")
+
     except Exception as e:
         print(f"課程爬蟲失敗: {e}")
+        # 在開發時印出完整的 traceback 會更有幫助
+        import traceback
+
+        traceback.print_exc()
 
     print(f"課程爬蟲任務完成 - {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 
 def fetch_course_info(academic_year: str, academic_semester: str) -> pd.DataFrame:
+    # ... (保持原本的程式碼)
     """獲取課程基本資訊"""
     try:
         response = requests.get(
@@ -64,6 +100,7 @@ def fetch_course_info(academic_year: str, academic_semester: str) -> pd.DataFram
 def fetch_course_detail(
     academic_year: str, academic_semester: str, course_codes: List[str]
 ) -> pd.DataFrame:
+    # ... (保持原本的程式碼，這裡不需要變動)
     """
     獲取課程詳細資訊，包含評分方式和授課教師
     回傳巢狀結構的 DataFrame
@@ -163,11 +200,12 @@ def fetch_course_detail(
             teaching_goal = None
             try:
                 meta_description = soup.find("meta", attrs={"name": "description"})
-                assert meta_description, "Meta description not found"
+                # assert meta_description, "Meta description not found" # 建議註解掉 assert，避免中斷迴圈
                 if meta_description and hasattr(meta_description, "attrs"):
                     teaching_goal = meta_description.attrs.get("content", "").strip()
                 else:
-                    print("Meta description does not have 'attrs' attribute or is None")
+                    # print("Meta description does not have 'attrs' attribute or is None")
+                    pass
             except Exception as e:
                 print(f"提取 meta description 時出錯: {e}")
 

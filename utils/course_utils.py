@@ -1,6 +1,8 @@
-import requests
 import io
+
 import pandas as pd
+import requests
+
 from utils.dataframe_time_utils import process_course_info_df
 
 
