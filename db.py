@@ -150,11 +150,23 @@ def save_course_schedule_to_db(df: pd.DataFrame) -> None:
         logger.info(f"Saving course schedule to DB (collection: {collection_name})...")
         mydb = myclient[DB_NAME]
         collection = mydb[collection_name]
-        # DataFrame 轉 dict 並批次寫入
+
+        collection.create_index("course_stage")
+
+        ops = []
         records = df.to_dict(orient="records")
 
         for record in records:
-            collection.update_one({}, {"$set": record}, upsert=True)
+            ops.append(
+                UpdateOne(
+                    {"course_stage": record["course_stage"]},
+                    {"$set": record},
+                    upsert=True,
+                )
+            )
+
+        if ops:
+            collection.bulk_write(ops)
 
         logger.info(
             f"Success saving course schedule to DB (collection: {collection_name})"
@@ -270,4 +282,3 @@ def save_course_detail_to_db(df: pd.DataFrame) -> None:
         )
     except Exception as e:
         logger.error(f"Error saving course detail to DB: {e}")
-
