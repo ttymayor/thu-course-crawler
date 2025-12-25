@@ -153,8 +153,9 @@ def save_course_schedule_to_db(df: pd.DataFrame) -> None:
         # DataFrame 轉 dict 並批次寫入
         records = df.to_dict(orient="records")
 
-        if records:
-            collection.update_many({}, {"$set": {"data": records}})
+        for record in records:
+            collection.update_one({}, {"$set": record}, upsert=True)
+
         logger.info(
             f"Success saving course schedule to DB (collection: {collection_name})"
         )
