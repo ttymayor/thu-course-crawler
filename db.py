@@ -151,7 +151,7 @@ def save_course_schedule_to_db(df: pd.DataFrame) -> None:
         mydb = myclient[DB_NAME]
         collection = mydb[collection_name]
 
-        collection.create_index("course_stage")
+        collection.create_index("id")
 
         ops = []
         records = df.to_dict(orient="records")
@@ -159,7 +159,7 @@ def save_course_schedule_to_db(df: pd.DataFrame) -> None:
         for record in records:
             ops.append(
                 UpdateOne(
-                    {"course_stage": record["course_stage"]},
+                    {"id": record["id"]},
                     {"$set": record},
                     upsert=True,
                 )

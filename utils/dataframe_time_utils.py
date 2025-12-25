@@ -34,6 +34,10 @@ def process_course_schedule_df(df: pd.DataFrame) -> pd.DataFrame:
             "狀態": "status",
         }
     )
+
+    # 新增自建 id 欄位，維持排序
+    df["id"] = df.index
+
     return df
 
 
