@@ -271,17 +271,3 @@ def save_course_detail_to_db(df: pd.DataFrame) -> None:
     except Exception as e:
         logger.error(f"Error saving course detail to DB: {e}")
 
-
-def get_course_codes_from_db() -> list[str]:
-    """從資料庫獲取課程代碼列表"""
-    try:
-        collection_name = get_collection_name("course_info")
-        mydb = myclient[DB_NAME]
-        collection = mydb[collection_name]
-
-        # 獲取所有課程代碼
-        course_codes = collection.distinct("course_code")
-        return course_codes
-    except Exception as e:
-        logger.error(f"Error getting course codes from DB: {e}")
-        return []
