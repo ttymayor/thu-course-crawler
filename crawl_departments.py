@@ -8,8 +8,6 @@ from urllib3 import response
 
 from db import save_department_categories_to_db, save_departments_to_db
 
-# from utils.dataframe_utils import process_course_schedule_df
-
 
 logging.basicConfig(
     level=logging.INFO,
@@ -113,16 +111,16 @@ def fetch_dept_categories() -> tuple[pd.DataFrame, pd.DataFrame]:
                                 department_code = dept_href.split("/")[-1]
                                 
                                 # 第二個 cell 包含課程數量資訊
-                                course_info = cells[1].text.strip()
+                                # course_info = cells[1].text.strip()
                                 
                                 dept_info = {
                                     "category_code": category_code,
                                     "category_name": category_name,
                                     "department_code": department_code,
                                     "department_name": dept_name,
-                                    "dept_url": f"{base_url}{dept_href}",
-                                    "dept_href": dept_href,
-                                    "course_info": course_info
+                                    "department_url": f"{base_url}{dept_href}",
+                                    "department_href": dept_href,
+                                    # "course_info": course_info
                                 }
                                 departments_data.append(dept_info)
                                 logger.info(f"  - Found department: {dept_name} (code: {department_code})")
