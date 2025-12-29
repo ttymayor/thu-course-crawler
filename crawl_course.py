@@ -45,25 +45,25 @@ CONCURRENCY_LIMIT = 5
 
 async def main() -> None:
     """獲取課程資訊和詳細資訊並整合為一張表"""
-    logger.info("[crawl_course_info] Start executing course crawler")
+    logger.info("[crawl_course] Start executing course crawler")
 
     try:
         # --- 1. 爬取課程基本資訊 ---
-        logger.info("[crawl_course_info] fetching course basic info...")
+        logger.info("[crawl_course] fetching course basic info...")
         course_info_df = await fetch_course_info(ACADEMIC_YEAR, ACADEMIC_SEMESTER)
 
         if course_info_df.empty:
             logger.error(
-                "[crawl_course_info] Failed to fetch course info, terminating program."
+                "[crawl_course] Failed to fetch course info, terminating program."
             )
             return
 
         course_info_df = process_course_info_df(course_info_df)
         save_course_info_to_db(course_info_df)
-        logger.info(f"[crawl_course_info] Done! Saved {len(course_info_df)} courses")
+        logger.info(f"[crawl_course] Done! Saved {len(course_info_df)} courses")
 
         # --- 2. 爬取課程詳細資訊 ---
-        logger.info("[crawl_course_info] fetching course details...")
+        logger.info("[crawl_course] fetching course details...")
         course_codes = course_info_df["course_code"].tolist()
 
         if DB_ENV == "dev":
@@ -76,18 +76,18 @@ async def main() -> None:
         )
 
         save_course_detail_to_db(course_detail_df)
-        logger.info(f"[crawl_course_info] Done! Saved {len(course_detail_df)} courses")
+        logger.info(f"[crawl_course] Done! Saved {len(course_detail_df)} courses")
 
         # --- 3. 資料整併 (Merge) ---
-        logger.info("[crawl_course_info] merging dataframes...")
+        logger.info("[crawl_course] merging dataframes...")
         merged_df = pd.merge(
             course_info_df, course_detail_df, on="course_code", how="left"
         )
 
-        logger.info(f"[crawl_course_info] Done! Merged {len(merged_df)} courses")
+        logger.info(f"[crawl_course] Done! Merged {len(merged_df)} courses")
         save_merged_courses_to_db(merged_df)
 
-        logger.info("[crawl_course_info] Done! Saved merged courses")
+        logger.info("[crawl_course] Done! Saved merged courses")
 
     except Exception as e:
         logger.error(f"Course crawling failed: {e}")
@@ -95,7 +95,7 @@ async def main() -> None:
 
         traceback.print_exc()
 
-    logger.info("[crawl_course_info] Course crawling completed!")
+    logger.info("[crawl_course] Course crawling completed!")
 
 
 async def fetch_course_info(academic_year: str, academic_semester: str) -> pd.DataFrame:

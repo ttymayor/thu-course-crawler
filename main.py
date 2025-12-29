@@ -30,9 +30,9 @@ def main() -> None:
             return
 
         # --- 2. 執行課程爬蟲（資訊+詳細資訊） ---
-        logger.info("[main] 2. Executing crawl_course_info.py...")
+        logger.info("[main] 2. Executing crawl_course.py...")
         result_course = subprocess.run(
-            [sys.executable, "crawl_course_info.py"],
+            [sys.executable, "crawl_course.py"],
             capture_output=False,
             text=True,
         )

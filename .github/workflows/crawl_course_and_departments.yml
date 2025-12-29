@@ -1,4 +1,4 @@
-name: crawl_course_info
+name: crawl_course_and_departments
 
 on:
   schedule:
@@ -6,8 +6,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  crawl-course-info:
-    name: crawl_course_info
+  crawl-course-and-departments:
+    name: crawl_course_and_departments
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -34,4 +34,8 @@ jobs:
 
       - name: Run course crawler
         run: |
-          uv run crawl_course_info.py
+          uv run crawl_course.py
+
+      - name: Run departments crawler
+        run: |
+          uv run crawl_departments.py
