@@ -282,3 +282,101 @@ def save_course_detail_to_db(df: pd.DataFrame) -> None:
         )
     except Exception as e:
         logger.error(f"Error saving course detail to DB: {e}")
+
+
+def save_department_categories_to_db(df: pd.DataFrame) -> None:
+    """
+    將 department_categories DataFrame 寫入 MongoDB 資料庫
+    """
+    if df.empty:
+        logger.info("Department categories DataFrame is empty")
+        return
+
+    assert DB_NAME, "DB_NAME must be set in .env file"
+
+    try:
+        collection_name = get_collection_name("department_categories")
+        logger.info(
+            f"Saving department categories to DB (collection: {collection_name})..."
+        )
+        mydb = myclient[DB_NAME]
+        collection = mydb[collection_name]
+
+        # 建立索引
+        collection.create_index("category_code", unique=True)
+
+        ops = []
+        records = df.to_dict(orient="records")
+
+        for record in records:
+            ops.append(
+                UpdateOne(
+                    {"category_code": record["category_code"]},
+                    {"$set": record},
+                    upsert=True,
+                )
+            )
+
+        if ops:
+            result = collection.bulk_write(ops)
+            logger.info(
+                f"Write Matched: {result.matched_count}, Modified: {result.modified_count}, Upserted: {result.upserted_count}"
+            )
+
+        logger.info(
+            f"Success saving department categories to DB (collection: {collection_name})"
+        )
+    except Exception as e:
+        logger.error(f"Error saving department categories to DB: {e}")
+        import traceback
+
+        traceback.print_exc()
+
+
+def save_departments_to_db(df: pd.DataFrame) -> None:
+    """
+    將 departments DataFrame 寫入 MongoDB 資料庫
+    """
+    if df.empty:
+        logger.info("Departments DataFrame is empty")
+        return
+
+    assert DB_NAME, "DB_NAME must be set in .env file"
+
+    try:
+        collection_name = get_collection_name("departments")
+        logger.info(f"Saving departments to DB (collection: {collection_name})...")
+        mydb = myclient[DB_NAME]
+        collection = mydb[collection_name]
+
+        # 建立索引
+        collection.create_index("department_code", unique=True)
+        collection.create_index("category_code")  # 方便按分類查詢
+
+        ops = []
+        records = df.to_dict(orient="records")
+
+        for record in records:
+            ops.append(
+                UpdateOne(
+                    {"department_code": record["department_code"]},
+                    {"$set": record},
+                    upsert=True,
+                )
+            )
+
+        if ops:
+            result = collection.bulk_write(ops)
+            logger.info(
+                f"Write Matched: {result.matched_count}, Modified: {result.modified_count}, Upserted: {result.upserted_count}"
+            )
+
+        logger.info(
+            f"Success saving departments to DB (collection: {collection_name})"
+        )
+    except Exception as e:
+        logger.error(f"Error saving departments to DB: {e}")
+        import traceback
+
+        traceback.print_exc()
+

@@ -25,7 +25,7 @@ from db import (
     save_course_info_to_db,
     save_merged_courses_to_db,
 )
-from utils.dataframe_time_utils import process_course_info_df
+from utils.dataframe_utils import process_course_info_df
 
 logging.basicConfig(
     level=logging.INFO,

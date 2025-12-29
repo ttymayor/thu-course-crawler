@@ -6,7 +6,7 @@ from bs4 import BeautifulSoup
 from bs4.element import Tag
 
 from db import save_course_schedule_to_db
-from utils.dataframe_time_utils import process_course_schedule_df
+from utils.dataframe_utils import process_course_schedule_df
 
 logging.basicConfig(
     level=logging.INFO,
