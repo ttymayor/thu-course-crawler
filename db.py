@@ -161,20 +161,17 @@ def save_course_schedule_to_db(df: pd.DataFrame) -> None:
 
         collection.create_index("id")
 
-        ops = []
+        if df.empty:
+            logger.warning("Course schedule DataFrame is empty, skipping save.")
+            return
+
+        # 刪除舊資料
+        collection.delete_many({})
+
+        # 新增新資料
         records = df.to_dict(orient="records")
-
-        for record in records:
-            ops.append(
-                UpdateOne(
-                    {"id": record["id"]},
-                    {"$set": record},
-                    upsert=True,
-                )
-            )
-
-        if ops:
-            collection.bulk_write(ops)
+        if records:
+            collection.insert_many(records)
 
         logger.info(
             f"Success saving course schedule to DB (collection: {collection_name})"
