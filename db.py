@@ -49,7 +49,15 @@ def save_merged_courses_to_db(df: pd.DataFrame) -> None:
         collection = mydb[collection_name]
 
         # 建立索引
-        collection.create_index("course_code", unique=True)
+        try:
+            collection.create_index("course_code", unique=True)
+        except pymongo.errors.OperationFailure as e:
+            if e.code == 86:  # IndexKeySpecsConflict
+                logger.warning(f"Index conflict detected in {collection_name}. Dropping existing index 'course_code_1' and recreating.")
+                collection.drop_index("course_code_1")
+                collection.create_index("course_code", unique=True)
+            else:
+                raise e
 
         ops = []
         # 將 DataFrame 轉為 dict 列表，逐筆處理
@@ -192,7 +200,15 @@ def save_course_info_to_db(df: pd.DataFrame) -> None:
         mydb = myclient[DB_NAME]
         collection = mydb[collection_name]
         # 創建索引
-        collection.create_index("course_code", unique=True)
+        try:
+            collection.create_index("course_code", unique=True)
+        except pymongo.errors.OperationFailure as e:
+            if e.code == 86:  # IndexKeySpecsConflict
+                logger.warning(f"Index conflict detected in {collection_name}. Dropping existing index 'course_code_1' and recreating.")
+                collection.drop_index("course_code_1")
+                collection.create_index("course_code", unique=True)
+            else:
+                raise e
 
         ops = []
         records = df.to_dict(orient="records")
@@ -229,7 +245,15 @@ def save_course_detail_to_db(df: pd.DataFrame) -> None:
         logger.info(f"Saving course detail to DB (collection: {collection_name})...")
         mydb = myclient[DB_NAME]
         collection = mydb[collection_name]
-        collection.create_index("course_code", unique=True)
+        try:
+            collection.create_index("course_code", unique=True)
+        except pymongo.errors.OperationFailure as e:
+            if e.code == 86:  # IndexKeySpecsConflict
+                logger.warning(f"Index conflict detected in {collection_name}. Dropping existing index 'course_code_1' and recreating.")
+                collection.drop_index("course_code_1")
+                collection.create_index("course_code", unique=True)
+            else:
+                raise e
 
         for _, row in df.iterrows():
             grading_items = []
@@ -303,7 +327,15 @@ def save_department_categories_to_db(df: pd.DataFrame) -> None:
         collection = mydb[collection_name]
 
         # 建立索引
-        collection.create_index("category_code", unique=True)
+        try:
+            collection.create_index("category_code", unique=True)
+        except pymongo.errors.OperationFailure as e:
+            if e.code == 86:  # IndexKeySpecsConflict
+                logger.warning(f"Index conflict detected in {collection_name}. Dropping existing index 'category_code_1' and recreating.")
+                collection.drop_index("category_code_1")
+                collection.create_index("category_code", unique=True)
+            else:
+                raise e
 
         ops = []
         records = df.to_dict(orient="records")
@@ -350,7 +382,15 @@ def save_departments_to_db(df: pd.DataFrame) -> None:
         collection = mydb[collection_name]
 
         # 建立索引
-        collection.create_index("department_code", unique=True)
+        try:
+            collection.create_index("department_code", unique=True)
+        except pymongo.errors.OperationFailure as e:
+            if e.code == 86:  # IndexKeySpecsConflict
+                logger.warning(f"Index conflict detected in {collection_name}. Dropping existing index 'department_code_1' and recreating.")
+                collection.drop_index("department_code_1")
+                collection.create_index("department_code", unique=True)
+            else:
+                raise e
         collection.create_index("category_code")  # 方便按分類查詢
 
         ops = []

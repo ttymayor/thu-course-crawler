@@ -1,4 +1,5 @@
 import logging
+import os
 
 import pandas as pd
 import requests
@@ -14,6 +15,9 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
+
+ACADEMIC_YEAR = os.getenv("ACADEMIC_YEAR", "114")
+ACADEMIC_SEMESTER = os.getenv("ACADEMIC_SEMESTER", "1")
 
 
 def main() -> None:
@@ -40,7 +44,9 @@ def fetch_dept_categories() -> tuple[pd.DataFrame, pd.DataFrame]:
     """獲取所有系所分類和系所資訊"""
     try:
         base_url = "https://course.thu.edu.tw"
-        response = requests.get(f"{base_url}/view-dept/114/1/")
+        response = requests.get(
+            f"{base_url}/view-dept/{ACADEMIC_YEAR}/{ACADEMIC_SEMESTER}/"
+        )
         response.raise_for_status()
 
         soup = BeautifulSoup(response.text, "html.parser")
@@ -67,7 +73,10 @@ def fetch_dept_categories() -> tuple[pd.DataFrame, pd.DataFrame]:
                 continue
 
             # 如果是 everything，先儲存起來，稍後處理
-            if category_href == "/view-dept/114/1/everything":
+            if (
+                category_href
+                == f"/view-dept/{ACADEMIC_YEAR}/{ACADEMIC_SEMESTER}/everything"
+            ):
                 everything_category = category
                 continue
 
@@ -143,11 +152,15 @@ def fetch_dept_categories() -> tuple[pd.DataFrame, pd.DataFrame]:
 
         # 第二階段：處理 everything 分類，找出未分類的系所
         if everything_category:
-            logger.info("[fetch_dept_categories] Processing 'everything' category for uncategorized departments")
-            
+            logger.info(
+                "[fetch_dept_categories] Processing 'everything' category for uncategorized departments"
+            )
+
             # 收集已經分類的系所代碼
-            categorized_dept_codes = set(dept["department_code"] for dept in departments_data)
-            
+            categorized_dept_codes = set(
+                dept["department_code"] for dept in departments_data
+            )
+
             try:
                 everything_href = everything_category.get("href")
                 everything_url = f"{base_url}{everything_href}"
@@ -195,15 +208,19 @@ def fetch_dept_categories() -> tuple[pd.DataFrame, pd.DataFrame]:
                         uncategorized_category = {
                             "category_code": "uncategorized",
                             "category_name": "未分類",
-                            "category_url": f"{base_url}/view-dept/114/1/everything",
-                            "category_href": "/view-dept/114/1/everything",
+                            "category_url": f"{base_url}/view-dept/{ACADEMIC_YEAR}/{ACADEMIC_SEMESTER}/everything",
+                            "category_href": f"/view-dept/{ACADEMIC_YEAR}/{ACADEMIC_SEMESTER}/everything",
                         }
                         categories_data.append(uncategorized_category)
                         departments_data.extend(uncategorized_depts)
-                        logger.info(f"[fetch_dept_categories] Added {len(uncategorized_depts)} uncategorized departments")
+                        logger.info(
+                            f"[fetch_dept_categories] Added {len(uncategorized_depts)} uncategorized departments"
+                        )
 
             except Exception as e:
-                logger.error(f"[fetch_dept_categories] Error processing 'everything' category: {e}")
+                logger.error(
+                    f"[fetch_dept_categories] Error processing 'everything' category: {e}"
+                )
 
         # 建立 DataFrames
         categories_df = pd.DataFrame(categories_data)
