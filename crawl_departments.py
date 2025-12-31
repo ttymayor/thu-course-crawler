@@ -16,6 +16,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+DB_ENV = os.getenv("DB_ENV", "prod")
 ACADEMIC_YEAR = os.getenv("ACADEMIC_YEAR", "114")
 ACADEMIC_SEMESTER = os.getenv("ACADEMIC_SEMESTER", "1")
 
@@ -236,11 +237,12 @@ def fetch_dept_categories() -> tuple[pd.DataFrame, pd.DataFrame]:
         print(departments_df)
 
         # 儲存為 CSV (可選)
-        categories_df.to_csv(
-            "department_categories.csv", index=False, encoding="utf-8-sig"
-        )
-        departments_df.to_csv("departments.csv", index=False, encoding="utf-8-sig")
-        logger.info("[fetch_dept_categories] Data saved to CSV files")
+        if DB_ENV == "dev":
+            categories_df.to_csv(
+                "department_categories.csv", index=False, encoding="utf-8-sig"
+            )
+            departments_df.to_csv("departments.csv", index=False, encoding="utf-8-sig")
+            logger.info("[fetch_dept_categories] Data saved to CSV files")
 
         return categories_df, departments_df
 
