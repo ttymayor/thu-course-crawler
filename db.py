@@ -53,7 +53,9 @@ def save_merged_courses_to_db(df: pd.DataFrame) -> None:
             collection.create_index("course_code", unique=True)
         except pymongo.errors.OperationFailure as e:
             if e.code == 86:  # IndexKeySpecsConflict
-                logger.warning(f"Index conflict detected in {collection_name}. Dropping existing index 'course_code_1' and recreating.")
+                logger.warning(
+                    f"Index conflict detected in {collection_name}. Dropping existing index 'course_code_1' and recreating."
+                )
                 collection.drop_index("course_code_1")
                 collection.create_index("course_code", unique=True)
             else:
@@ -201,7 +203,9 @@ def save_course_info_to_db(df: pd.DataFrame) -> None:
             collection.create_index("course_code", unique=True)
         except pymongo.errors.OperationFailure as e:
             if e.code == 86:  # IndexKeySpecsConflict
-                logger.warning(f"Index conflict detected in {collection_name}. Dropping existing index 'course_code_1' and recreating.")
+                logger.warning(
+                    f"Index conflict detected in {collection_name}. Dropping existing index 'course_code_1' and recreating."
+                )
                 collection.drop_index("course_code_1")
                 collection.create_index("course_code", unique=True)
             else:
@@ -212,9 +216,6 @@ def save_course_info_to_db(df: pd.DataFrame) -> None:
 
         for record in records:
             course_code = record["course_code"]
-            collection.update_one(
-                {"course_code": record["course_code"]}, {"$set": record}, upsert=True
-            )
             ops.append(
                 UpdateOne({"course_code": course_code}, {"$set": record}, upsert=True)
             )
@@ -242,11 +243,14 @@ def save_course_detail_to_db(df: pd.DataFrame) -> None:
         logger.info(f"Saving course detail to DB (collection: {collection_name})...")
         mydb = myclient[DB_NAME]
         collection = mydb[collection_name]
+
         try:
             collection.create_index("course_code", unique=True)
         except pymongo.errors.OperationFailure as e:
             if e.code == 86:  # IndexKeySpecsConflict
-                logger.warning(f"Index conflict detected in {collection_name}. Dropping existing index 'course_code_1' and recreating.")
+                logger.warning(
+                    f"Index conflict detected in {collection_name}. Dropping existing index 'course_code_1' and recreating."
+                )
                 collection.drop_index("course_code_1")
                 collection.create_index("course_code", unique=True)
             else:
@@ -270,26 +274,26 @@ def save_course_detail_to_db(df: pd.DataFrame) -> None:
 
             document = {
                 "is_closed": row.get("is_closed", False),
-                "teachers": row["teachers"]
-                if isinstance(row["teachers"], list)
-                else [],
+                "teachers": (
+                    row["teachers"] if isinstance(row["teachers"], list) else []
+                ),
                 "grading_items": grading_items,
                 "selection_records": (
                     row["selection_records"]
                     if isinstance(row["selection_records"], list)
                     else []
                 ),
-                "teaching_goal": row["teaching_goal"]
-                if pd.notna(row["teaching_goal"])
-                else "",
+                "teaching_goal": (
+                    row["teaching_goal"] if pd.notna(row["teaching_goal"]) else ""
+                ),
                 "course_description": (
                     row["course_description"]
                     if pd.notna(row["course_description"])
                     else ""
                 ),
-                "basic_info": row["basic_info"]
-                if isinstance(row["basic_info"], dict)
-                else {},
+                "basic_info": (
+                    row["basic_info"] if isinstance(row["basic_info"], dict) else {}
+                ),
             }
 
             collection.update_one(
@@ -328,7 +332,9 @@ def save_department_categories_to_db(df: pd.DataFrame) -> None:
             collection.create_index("category_code", unique=True)
         except pymongo.errors.OperationFailure as e:
             if e.code == 86:  # IndexKeySpecsConflict
-                logger.warning(f"Index conflict detected in {collection_name}. Dropping existing index 'category_code_1' and recreating.")
+                logger.warning(
+                    f"Index conflict detected in {collection_name}. Dropping existing index 'category_code_1' and recreating."
+                )
                 collection.drop_index("category_code_1")
                 collection.create_index("category_code", unique=True)
             else:
@@ -383,7 +389,9 @@ def save_departments_to_db(df: pd.DataFrame) -> None:
             collection.create_index("department_code", unique=True)
         except pymongo.errors.OperationFailure as e:
             if e.code == 86:  # IndexKeySpecsConflict
-                logger.warning(f"Index conflict detected in {collection_name}. Dropping existing index 'department_code_1' and recreating.")
+                logger.warning(
+                    f"Index conflict detected in {collection_name}. Dropping existing index 'department_code_1' and recreating."
+                )
                 collection.drop_index("department_code_1")
                 collection.create_index("department_code", unique=True)
             else:
@@ -408,12 +416,9 @@ def save_departments_to_db(df: pd.DataFrame) -> None:
                 f"Write Matched: {result.matched_count}, Modified: {result.modified_count}, Upserted: {result.upserted_count}"
             )
 
-        logger.info(
-            f"Success saving departments to DB (collection: {collection_name})"
-        )
+        logger.info(f"Success saving departments to DB (collection: {collection_name})")
     except Exception as e:
         logger.error(f"Error saving departments to DB: {e}")
         import traceback
 
         traceback.print_exc()
-
