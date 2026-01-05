@@ -61,6 +61,11 @@ def save_merged_courses_to_db(df: pd.DataFrame) -> None:
             else:
                 raise e
 
+        # 1. 刪除不在目前資料中的舊資料 (Sync)
+        current_codes = df["course_code"].tolist()
+        delete_result = collection.delete_many({"course_code": {"$nin": current_codes}})
+        logger.info(f"Deleted {delete_result.deleted_count} stale documents from {collection_name}")
+
         ops = []
         # 將 DataFrame 轉為 dict 列表，逐筆處理
         records = df.to_dict(orient="records")
@@ -167,13 +172,24 @@ def save_course_schedule_to_db(df: pd.DataFrame) -> None:
             logger.warning("Course schedule DataFrame is empty, skipping save.")
             return
 
-        # 刪除舊資料
-        collection.delete_many({})
+        # 1. 刪除不在目前資料中的舊資料 (Sync)
+        current_ids = df["id"].tolist()
+        delete_result = collection.delete_many({"id": {"$nin": current_ids}})
+        logger.info(f"Deleted {delete_result.deleted_count} stale documents from {collection_name}")
 
         # 新增新資料
         records = df.to_dict(orient="records")
-        if records:
-            collection.insert_many(records)
+        ops = []
+        for record in records:
+            ops.append(
+                UpdateOne({"id": record["id"]}, {"$set": record}, upsert=True)
+            )
+
+        if ops:
+            result = collection.bulk_write(ops)
+            logger.info(
+                f"Write Matched: {result.matched_count}, Modified: {result.modified_count}, Upserted: {result.upserted_count}"
+            )
 
         logger.info(
             f"Success saving course schedule to DB (collection: {collection_name})"
@@ -211,6 +227,11 @@ def save_course_info_to_db(df: pd.DataFrame) -> None:
             else:
                 raise e
 
+        # 1. 刪除不在目前資料中的舊資料 (Sync)
+        current_codes = df["course_code"].tolist()
+        delete_result = collection.delete_many({"course_code": {"$nin": current_codes}})
+        logger.info(f"Deleted {delete_result.deleted_count} stale documents from {collection_name}")
+
         ops = []
         records = df.to_dict(orient="records")
 
@@ -221,7 +242,10 @@ def save_course_info_to_db(df: pd.DataFrame) -> None:
             )
 
         if ops:
-            collection.bulk_write(ops)
+            result = collection.bulk_write(ops)
+            logger.info(
+                f"Write Matched: {result.matched_count}, Modified: {result.modified_count}, Upserted: {result.upserted_count}"
+            )
         logger.info(f"Success saving course info to DB (collection: {collection_name})")
     except Exception as e:
         logger.error(f"Error saving course info to DB: {e}")
@@ -256,7 +280,15 @@ def save_course_detail_to_db(df: pd.DataFrame) -> None:
             else:
                 raise e
 
-        for _, row in df.iterrows():
+        # 1. 刪除不在目前資料中的舊資料 (Sync)
+        current_codes = df["course_code"].tolist()
+        delete_result = collection.delete_many({"course_code": {"$nin": current_codes}})
+        logger.info(f"Deleted {delete_result.deleted_count} stale documents from {collection_name}")
+
+        ops = []
+        records = df.to_dict(orient="records")
+
+        for row in records:
             grading_items = []
             if isinstance(row["grading_items"], list):
                 for item in row["grading_items"]:
@@ -296,10 +328,18 @@ def save_course_detail_to_db(df: pd.DataFrame) -> None:
                 ),
             }
 
-            collection.update_one(
-                {"course_code": row["course_code"]},  # 唯一鍵
-                {"$set": document},
-                upsert=True,
+            ops.append(
+                UpdateOne(
+                    {"course_code": row["course_code"]},  # 唯一鍵
+                    {"$set": document},
+                    upsert=True,
+                )
+            )
+
+        if ops:
+            result = collection.bulk_write(ops)
+            logger.info(
+                f"Write Matched: {result.matched_count}, Modified: {result.modified_count}, Upserted: {result.upserted_count}"
             )
 
         logger.info(
@@ -339,6 +379,11 @@ def save_department_categories_to_db(df: pd.DataFrame) -> None:
                 collection.create_index("category_code", unique=True)
             else:
                 raise e
+
+        # 1. 刪除不在目前資料中的舊資料 (Sync)
+        current_codes = df["category_code"].tolist()
+        delete_result = collection.delete_many({"category_code": {"$nin": current_codes}})
+        logger.info(f"Deleted {delete_result.deleted_count} stale documents from {collection_name}")
 
         ops = []
         records = df.to_dict(orient="records")
@@ -397,6 +442,11 @@ def save_departments_to_db(df: pd.DataFrame) -> None:
             else:
                 raise e
         collection.create_index("category_code")  # 方便按分類查詢
+
+        # 1. 刪除不在目前資料中的舊資料 (Sync)
+        current_codes = df["department_code"].tolist()
+        delete_result = collection.delete_many({"department_code": {"$nin": current_codes}})
+        logger.info(f"Deleted {delete_result.deleted_count} stale documents from {collection_name}")
 
         ops = []
         records = df.to_dict(orient="records")

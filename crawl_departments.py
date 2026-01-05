@@ -4,8 +4,6 @@ import os
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
-from bs4.element import Tag
-from urllib3 import response
 
 from db import save_department_categories_to_db, save_departments_to_db
 
@@ -18,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 DB_ENV = os.getenv("DB_ENV", "prod")
 ACADEMIC_YEAR = os.getenv("ACADEMIC_YEAR", "114")
-ACADEMIC_SEMESTER = os.getenv("ACADEMIC_SEMESTER", "1")
+ACADEMIC_SEMESTER = os.getenv("ACADEMIC_SEMESTER", "2")
 
 
 def main() -> None:
