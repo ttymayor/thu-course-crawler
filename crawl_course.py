@@ -38,7 +38,7 @@ load_dotenv()
 
 DB_ENV = os.getenv("DB_ENV", "prod")
 ACADEMIC_YEAR = os.getenv("ACADEMIC_YEAR", "114")
-ACADEMIC_SEMESTER = os.getenv("ACADEMIC_SEMESTER", "1")
+ACADEMIC_SEMESTER = os.getenv("ACADEMIC_SEMESTER", "2")
 DEV_DATA_LIMIT = int(os.getenv("DEV_DATA_LIMIT", "10"))
 CONCURRENCY_LIMIT = 5
 
@@ -107,7 +107,9 @@ async def fetch_course_info(academic_year: str, academic_semester: str) -> pd.Da
                 response.raise_for_status()
                 text = await response.text()
                 df = pd.read_csv(
-                    io.StringIO(text), dtype={"選課代碼": str, "開課系所代碼": str}
+                    io.StringIO(text),
+                    dtype={"選課代碼": str, "開課系所代碼": str},
+                    on_bad_lines="skip",
                 )
                 return df
     except Exception as e:
