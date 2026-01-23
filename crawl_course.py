@@ -212,19 +212,21 @@ async def fetch_single_course_detail(
                 ]
 
             teaching_goal = None
-            try:
-                meta_description = soup.find("meta", attrs={"name": "description"})
-                if meta_description and hasattr(meta_description, "attrs"):
-                    teaching_goal = meta_description.attrs.get("content", "").strip()
-            except Exception:
-                pass
-
             course_description = None
-            course_description_element = soup.select_one(
-                "#mainContent > div:nth-child(4) > div:nth-child(2) > p:nth-child(2)"
+
+            content_div = soup.select_one(
+                "#mainContent > div:nth-child(4) > div.thirteen.columns"
             )
-            if course_description_element:
-                course_description = course_description_element.get_text(strip=True)
+            if content_div:
+                for h2 in content_div.find_all("h2", class_="title"):
+                    title_text = h2.get_text(strip=True)
+                    next_p = h2.find_next_sibling("p")
+                    if next_p:
+                        content = next_p.get_text(strip=True)
+                        if "教育目標" in title_text:
+                            teaching_goal = content
+                        elif "課程概述" in title_text:
+                            course_description = content
 
             basic_info = {}
             basic_info_element = soup.select_one(
