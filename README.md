@@ -21,3 +21,7 @@
    ```bash
    uv run main.py
    ```
+
+## TODO
+
+- [ ] 重構環境變數讀取方式
