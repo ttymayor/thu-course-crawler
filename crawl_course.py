@@ -19,11 +19,7 @@ from rich.progress import (
 )
 
 from config import config
-from db import (
-    save_course_detail_to_db,
-    save_course_info_to_db,
-    save_merged_courses_to_db,
-)
+from db import save_merged_courses_to_db
 from utils.dataframe_utils import process_course_info_df
 
 from utils.logger import setup_logger, get_logger
@@ -54,8 +50,8 @@ async def main() -> None:
             return
 
         course_info_df = process_course_info_df(course_info_df)
-        save_course_info_to_db(course_info_df)
-        logger.info(f"[crawl_course] Done! Saved {len(course_info_df)} courses")
+        # save_course_info_to_db(course_info_df)
+        logger.info(f"[crawl_course] Done! Fetched {len(course_info_df)} courses")
 
         # --- 2. 爬取課程詳細資訊 ---
         logger.info("[crawl_course] fetching course details...")
@@ -70,8 +66,8 @@ async def main() -> None:
             config.academic_year, config.academic_semester, course_codes
         )
 
-        save_course_detail_to_db(course_detail_df)
-        logger.info(f"[crawl_course] Done! Saved {len(course_detail_df)} courses")
+        # save_course_detail_to_db(course_detail_df)
+        logger.info(f"[crawl_course] Done! Fetched {len(course_detail_df)} courses")
 
         # --- 3. 資料整併 (Merge) ---
         logger.info("[crawl_course] merging dataframes...")
