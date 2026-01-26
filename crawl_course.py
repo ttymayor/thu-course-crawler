@@ -26,12 +26,14 @@ from db import (
 )
 from utils.dataframe_utils import process_course_info_df
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-logger = logging.getLogger(__name__)
+from utils.logger import setup_logger, get_logger
+
+# Ensure logger is set up when running as script or importing
+# Since this script is often run as a subprocess, we should set up logging here too if main check passes,
+# but for global scope safety, we can just call setup_logger if it's the main entry or ensure it's idempotent.
+# setup_logger() uses basicConfig so it is idempotent.
+setup_logger()
+logger = get_logger(__name__)
 
 CONCURRENCY_LIMIT = 5
 

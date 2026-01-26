@@ -1,4 +1,8 @@
 import io
+import logging
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 import pandas as pd
 import requests
@@ -17,7 +21,7 @@ def fetch_course_info(academic_year: str, academic_semester: str) -> pd.DataFram
         )
         return df
     except Exception as e:
-        print(f"Error fetching course info: {e}")
+        logger.error(f"Error fetching course info: {e}")
         return pd.DataFrame()
 
 
@@ -28,5 +32,5 @@ def get_course_codes(academic_year: str, academic_semester: str) -> list[str]:
         course_info_df = process_course_info_df(course_info_df)
         return course_info_df["course_code"].tolist()
     except Exception as e:
-        print(f"Error getting course codes: {e}")
+        logger.error(f"Error getting course codes: {e}")
         return []

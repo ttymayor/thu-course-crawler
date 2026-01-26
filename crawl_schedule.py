@@ -8,12 +8,10 @@ from bs4.element import Tag
 from db import save_course_schedule_to_db
 from utils.dataframe_utils import process_course_schedule_df
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-logger = logging.getLogger(__name__)
+from utils.logger import setup_logger, get_logger
+
+setup_logger()
+logger = get_logger(__name__)
 
 
 def main() -> None:

@@ -7,12 +7,10 @@ from bs4 import BeautifulSoup
 from config import config
 from db import save_department_categories_to_db, save_departments_to_db
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-logger = logging.getLogger(__name__)
+from utils.logger import setup_logger, get_logger
+
+setup_logger()
+logger = get_logger(__name__)
 
 
 
@@ -227,10 +225,10 @@ def fetch_dept_categories() -> tuple[pd.DataFrame, pd.DataFrame]:
         logger.info(f"[fetch_dept_categories] Total departments: {len(departments_df)}")
 
         # 顯示結果
-        print("\n=== 系所分類 ===")
-        print(categories_df)
-        print("\n=== 系所列表 ===")
-        print(departments_df)
+        logger.info("\n=== 系所分類 ===")
+        logger.info(categories_df)
+        logger.info("\n=== 系所列表 ===")
+        logger.info(departments_df)
 
         # 儲存為 CSV (可選)
         if config.db_env == "dev":

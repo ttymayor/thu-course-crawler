@@ -1,13 +1,9 @@
-import logging
-import subprocess
 import sys
+import subprocess
+from utils.logger import setup_logger, get_logger
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-logger = logging.getLogger(__name__)
+setup_logger()
+logger = get_logger(__name__)
 
 
 def main() -> None:

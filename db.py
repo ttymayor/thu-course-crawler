@@ -7,12 +7,9 @@ from pymongo import UpdateOne
 
 from config import config
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-logger = logging.getLogger(__name__)
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 myclient: pymongo.MongoClient[dict] = pymongo.MongoClient(config.db_uri)
 
