@@ -1,14 +1,12 @@
 import asyncio
 import io
 import logging
-import os
 from typing import Any, Dict, List, Optional
 
 import aiohttp
 import pandas as pd
 from bs4 import BeautifulSoup
 from bs4.element import NavigableString, Tag
-from dotenv import load_dotenv
 from rich.progress import (
     BarColumn,
     MofNCompleteColumn,
@@ -20,6 +18,7 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 
+from config import config
 from db import (
     save_course_detail_to_db,
     save_course_info_to_db,
@@ -34,12 +33,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-load_dotenv()
-
-DB_ENV = os.getenv("DB_ENV", "prod")
-ACADEMIC_YEAR = os.getenv("ACADEMIC_YEAR", "114")
-ACADEMIC_SEMESTER = os.getenv("ACADEMIC_SEMESTER", "2")
-DEV_DATA_LIMIT = int(os.getenv("DEV_DATA_LIMIT", "10"))
 CONCURRENCY_LIMIT = 5
 
 
@@ -50,7 +43,7 @@ async def main() -> None:
     try:
         # --- 1. 爬取課程基本資訊 ---
         logger.info("[crawl_course] fetching course basic info...")
-        course_info_df = await fetch_course_info(ACADEMIC_YEAR, ACADEMIC_SEMESTER)
+        course_info_df = await fetch_course_info(config.academic_year, config.academic_semester)
 
         if course_info_df.empty:
             logger.error(
@@ -66,13 +59,13 @@ async def main() -> None:
         logger.info("[crawl_course] fetching course details...")
         course_codes = course_info_df["course_code"].tolist()
 
-        if DB_ENV == "dev":
-            course_codes = course_codes[:DEV_DATA_LIMIT]
-            logger.warning(f"[DEV MODE] Fetching {DEV_DATA_LIMIT} course details")
+        if config.db_env == "dev":
+            course_codes = course_codes[:config.dev_data_limit]
+            logger.warning(f"[DEV MODE] Fetching {config.dev_data_limit} course details")
 
         # 呼叫並發爬蟲函式
         course_detail_df = await fetch_course_details_concurrently(
-            ACADEMIC_YEAR, ACADEMIC_SEMESTER, course_codes
+            config.academic_year, config.academic_semester, course_codes
         )
 
         save_course_detail_to_db(course_detail_df)

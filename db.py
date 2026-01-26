@@ -1,11 +1,11 @@
 import logging
 import math
-import os
 
 import pandas as pd
 import pymongo
-from dotenv import load_dotenv
 from pymongo import UpdateOne
+
+from config import config
 
 logging.basicConfig(
     level=logging.INFO,
@@ -14,19 +14,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-load_dotenv()
-
-DB_NAME = os.getenv("DB_NAME")
-DB_ENV = os.getenv("DB_ENV", "prod")
-
-myclient: pymongo.MongoClient[dict] = pymongo.MongoClient(os.getenv("DB_URI"))
+myclient: pymongo.MongoClient[dict] = pymongo.MongoClient(config.db_uri)
 
 
 def get_collection_name(base_name: str) -> str:
     """根據環境變數返回資料表名稱"""
-    if DB_ENV == "dev":
-        return f"{base_name}_dev"
-    return base_name
+    return config.get_collection_name(base_name)
 
 
 def save_merged_courses_to_db(df: pd.DataFrame) -> None:
@@ -38,14 +31,14 @@ def save_merged_courses_to_db(df: pd.DataFrame) -> None:
         logger.error("Merged course DataFrame is empty")
         return
 
-    assert DB_NAME, "DB_NAME must be set in .env file"
+    assert config.db_name, "DB_NAME must be set in .env file"
 
     try:
         # 使用新的集合名稱，例如 'courses' 來存放完整的資料
         collection_name = get_collection_name("courses")
         logger.info(f"Saving merged courses to DB (collection: {collection_name})...")
 
-        mydb = myclient[DB_NAME]
+        mydb = myclient[config.db_name]
         collection = mydb[collection_name]
 
         # 建立索引
@@ -158,12 +151,12 @@ def save_course_schedule_to_db(df: pd.DataFrame) -> None:
     將 course_schedule DataFrame 寫入 MongoDB 資料庫
     """
 
-    assert DB_NAME, "DB_NAME must be set in .env file"
+    assert config.db_name, "DB_NAME must be set in .env file"
 
     try:
         collection_name = get_collection_name("course_schedule")
         logger.info(f"Saving course schedule to DB (collection: {collection_name})...")
-        mydb = myclient[DB_NAME]
+        mydb = myclient[config.db_name]
         collection = mydb[collection_name]
 
         collection.create_index("id")
@@ -207,12 +200,12 @@ def save_course_info_to_db(df: pd.DataFrame) -> None:
         logger.info("Course info DataFrame is empty")
         return
 
-    assert DB_NAME, "DB_NAME must be set in .env file"
+    assert config.db_name, "DB_NAME must be set in .env file"
 
     try:
         collection_name = get_collection_name("course_info")
         logger.info(f"Saving course info to DB (collection: {collection_name})...")
-        mydb = myclient[DB_NAME]
+        mydb = myclient[config.db_name]
         collection = mydb[collection_name]
         # 創建索引
         try:
@@ -260,12 +253,12 @@ def save_course_detail_to_db(df: pd.DataFrame) -> None:
         logger.info("Course detail DataFrame is empty")
         return
 
-    assert DB_NAME, "DB_NAME must be set in .env file"
+    assert config.db_name, "DB_NAME must be set in .env file"
 
     try:
         collection_name = get_collection_name("course_detail")
         logger.info(f"Saving course detail to DB (collection: {collection_name})...")
-        mydb = myclient[DB_NAME]
+        mydb = myclient[config.db_name]
         collection = mydb[collection_name]
 
         try:
@@ -357,14 +350,14 @@ def save_department_categories_to_db(df: pd.DataFrame) -> None:
         logger.info("Department categories DataFrame is empty")
         return
 
-    assert DB_NAME, "DB_NAME must be set in .env file"
+    assert config.db_name, "DB_NAME must be set in .env file"
 
     try:
         collection_name = get_collection_name("department_categories")
         logger.info(
             f"Saving department categories to DB (collection: {collection_name})..."
         )
-        mydb = myclient[DB_NAME]
+        mydb = myclient[config.db_name]
         collection = mydb[collection_name]
 
         # 建立索引
@@ -421,12 +414,12 @@ def save_departments_to_db(df: pd.DataFrame) -> None:
         logger.info("Departments DataFrame is empty")
         return
 
-    assert DB_NAME, "DB_NAME must be set in .env file"
+    assert config.db_name, "DB_NAME must be set in .env file"
 
     try:
         collection_name = get_collection_name("departments")
         logger.info(f"Saving departments to DB (collection: {collection_name})...")
-        mydb = myclient[DB_NAME]
+        mydb = myclient[config.db_name]
         collection = mydb[collection_name]
 
         # 建立索引

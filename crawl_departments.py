@@ -1,10 +1,10 @@
 import logging
-import os
 
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 
+from config import config
 from db import save_department_categories_to_db, save_departments_to_db
 
 logging.basicConfig(
@@ -14,9 +14,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-DB_ENV = os.getenv("DB_ENV", "prod")
-ACADEMIC_YEAR = os.getenv("ACADEMIC_YEAR", "114")
-ACADEMIC_SEMESTER = os.getenv("ACADEMIC_SEMESTER", "2")
+
 
 
 def main() -> None:
@@ -44,7 +42,7 @@ def fetch_dept_categories() -> tuple[pd.DataFrame, pd.DataFrame]:
     try:
         base_url = "https://course.thu.edu.tw"
         response = requests.get(
-            f"{base_url}/view-dept/{ACADEMIC_YEAR}/{ACADEMIC_SEMESTER}/"
+            f"{base_url}/view-dept/{config.academic_year}/{config.academic_semester}/"
         )
         response.raise_for_status()
 
@@ -74,7 +72,7 @@ def fetch_dept_categories() -> tuple[pd.DataFrame, pd.DataFrame]:
             # 如果是 everything，先儲存起來，稍後處理
             if (
                 category_href
-                == f"/view-dept/{ACADEMIC_YEAR}/{ACADEMIC_SEMESTER}/everything"
+                == f"/view-dept/{config.academic_year}/{config.academic_semester}/everything"
             ):
                 everything_category = category
                 continue
@@ -207,8 +205,8 @@ def fetch_dept_categories() -> tuple[pd.DataFrame, pd.DataFrame]:
                         uncategorized_category = {
                             "category_code": "uncategorized",
                             "category_name": "未分類",
-                            "category_url": f"{base_url}/view-dept/{ACADEMIC_YEAR}/{ACADEMIC_SEMESTER}/everything",
-                            "category_href": f"/view-dept/{ACADEMIC_YEAR}/{ACADEMIC_SEMESTER}/everything",
+                            "category_url": f"{base_url}/view-dept/{config.academic_year}/{config.academic_semester}/everything",
+                            "category_href": f"/view-dept/{config.academic_year}/{config.academic_semester}/everything",
                         }
                         categories_data.append(uncategorized_category)
                         departments_data.extend(uncategorized_depts)
@@ -235,7 +233,7 @@ def fetch_dept_categories() -> tuple[pd.DataFrame, pd.DataFrame]:
         print(departments_df)
 
         # 儲存為 CSV (可選)
-        if DB_ENV == "dev":
+        if config.db_env == "dev":
             categories_df.to_csv(
                 "department_categories.csv", index=False, encoding="utf-8-sig"
             )
