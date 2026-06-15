@@ -25,8 +25,8 @@ class Config:
     db_env: Literal["dev", "prod"] = "prod"
 
     # Academic Configuration
-    academic_year: str = "114"
-    academic_semester: str = "2"
+    academic_year: str = "115"
+    academic_semester: str = "1"
 
     # Development Configuration
     dev_data_limit: int = 10
@@ -71,8 +71,8 @@ def load_config() -> Config:
         db_name=os.getenv("DB_NAME", ""),
         db_uri=os.getenv("DB_URI", ""),
         db_env=os.getenv("DB_ENV", "prod"),  # type: ignore
-        academic_year=os.getenv("ACADEMIC_YEAR", "114"),
-        academic_semester=os.getenv("ACADEMIC_SEMESTER", "2"),
+        academic_year=os.getenv("ACADEMIC_YEAR", "115"),
+        academic_semester=os.getenv("ACADEMIC_SEMESTER", "1"),
         dev_data_limit=int(os.getenv("DEV_DATA_LIMIT", "10")),
     )
 
