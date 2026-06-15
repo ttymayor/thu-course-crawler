@@ -21,7 +21,7 @@ No tests or linter are configured.
 ## Environment Variables (.env)
 
 Required: `DB_NAME`, `DB_URI`
-Optional: `DB_ENV` (dev|prod, default: prod), `ACADEMIC_YEAR` (default: 114), `ACADEMIC_SEMESTER` (default: 2), `DEV_DATA_LIMIT` (default: 10)
+Optional: `DB_ENV` (dev|prod, default: prod), `ACADEMIC_YEAR` (default: 115), `ACADEMIC_SEMESTER` (default: 1), `DEV_DATA_LIMIT` (default: 10), `CONCURRENCY_LIMIT` (default: 3)
 
 When `DB_ENV=dev`, collection names get a `_dev` suffix and course detail fetching is limited to `DEV_DATA_LIMIT` items.
 

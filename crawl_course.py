@@ -32,7 +32,6 @@ from utils.logger import setup_logger, get_logger
 setup_logger()
 logger = get_logger(__name__)
 
-CONCURRENCY_LIMIT = 5
 BASE_URL = "https://course.thu.edu.tw"
 
 
@@ -316,13 +315,14 @@ async def fetch_course_details_concurrently(
         TimeRemainingColumn(),  # 剩餘時間估算
     )
 
-    semaphore = asyncio.Semaphore(CONCURRENCY_LIMIT)
+    concurrency_limit = config.concurrency_limit
+    semaphore = asyncio.Semaphore(concurrency_limit)
 
     async with aiohttp.ClientSession() as session:
         # 使用 progress context manager
         with progress:
             task_id = progress.add_task(
-                f"[cyan]fetching course details (concurrency: {CONCURRENCY_LIMIT})...",
+                f"[cyan]fetching course details (concurrency: {concurrency_limit})...",
                 total=len(course_codes),
             )
 

@@ -30,6 +30,7 @@ class Config:
 
     # Development Configuration
     dev_data_limit: int = 10
+    concurrency_limit: int = 3
 
     def __post_init__(self):
         """Validate configuration after initialization."""
@@ -41,6 +42,10 @@ class Config:
         # Validate db_env
         if self.db_env not in ("dev", "prod"):
             raise ValueError(f"DB_ENV must be 'dev' or 'prod', got: {self.db_env}")
+        if self.concurrency_limit < 1:
+            raise ValueError(
+                f"CONCURRENCY_LIMIT must be a positive integer, got: {self.concurrency_limit}"
+            )
 
     def get_collection_name(self, base_name: str) -> str:
         """
@@ -74,6 +79,7 @@ def load_config() -> Config:
         academic_year=os.getenv("ACADEMIC_YEAR", "115"),
         academic_semester=os.getenv("ACADEMIC_SEMESTER", "1"),
         dev_data_limit=int(os.getenv("DEV_DATA_LIMIT", "10")),
+        concurrency_limit=int(os.getenv("CONCURRENCY_LIMIT", "3")),
     )
 
 
