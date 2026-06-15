@@ -7,6 +7,13 @@ def process_course_schedule_df(df: pd.DataFrame) -> pd.DataFrame:
     """
     拆分 '起迄時間' 欄位為 start_time, end_time 並轉 timestamp，'結果公布日' 轉 iso 格式（非標準則保留原值）。
     """
+    if df.empty:
+        return df
+
+    required_columns = {"選課階段", "狀態", "起迄時間", "結果公布日"}
+    missing_columns = required_columns - set(df.columns)
+    if missing_columns:
+        raise ValueError(f"Course schedule missing columns: {sorted(missing_columns)}")
 
     def split_range(row):
         try:

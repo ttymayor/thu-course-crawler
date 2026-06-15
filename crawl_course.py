@@ -1,12 +1,13 @@
 import asyncio
 import io
 import logging
+import re
 from typing import Any, Dict, List, Optional
 
 import aiohttp
 import pandas as pd
 from bs4 import BeautifulSoup
-from bs4.element import NavigableString, Tag
+from bs4.element import Tag
 from rich.progress import (
     BarColumn,
     MofNCompleteColumn,
@@ -32,6 +33,141 @@ setup_logger()
 logger = get_logger(__name__)
 
 CONCURRENCY_LIMIT = 5
+BASE_URL = "https://course.thu.edu.tw"
+
+
+def clean_text(element: Optional[Tag]) -> str:
+    """Return compact visible text from a BeautifulSoup element."""
+    if not element:
+        return ""
+    return re.sub(r"\s+", " ", element.get_text(" ", strip=True)).strip()
+
+
+def text_after_label(text: str, label: str) -> str:
+    return re.sub(r"\s+", " ", text.replace(label, "", 1)).strip()
+
+
+def extract_card_value(soup: BeautifulSoup, label: str) -> str:
+    for card in soup.select(".card"):
+        heading = card.select_one("h6.card-title")
+        if heading and label in heading.get_text(strip=True):
+            return text_after_label(clean_text(card.select_one(".card-body")), label)
+    return ""
+
+
+def extract_teachers(soup: BeautifulSoup) -> list[str]:
+    for card in soup.select(".card"):
+        heading = card.select_one("h6.card-title")
+        if not heading or "授課教師" not in heading.get_text(strip=True):
+            continue
+        teachers = [
+            clean_text(anchor)
+            for anchor in card.find_all("a")
+            if clean_text(anchor)
+        ]
+        if teachers:
+            return teachers
+        body_text = extract_card_value(soup, "授課教師")
+        return [name.strip() for name in re.split(r"[/、,，]", body_text) if name.strip()]
+    return []
+
+
+def extract_hero_basic_info(soup: BeautifulSoup) -> dict[str, str]:
+    basic_info: dict[str, str] = {}
+
+    hero = soup.select_one("#course-hero")
+    if hero:
+        for badge in hero.select(".badge"):
+            badge_text = clean_text(badge)
+            if "必修" in badge_text or "選修" in badge_text:
+                basic_info["course_type"] = badge_text
+            elif "學分" in badge_text:
+                basic_info["credits"] = badge_text.replace("學分", "").strip()
+
+    class_time = extract_card_value(soup, "上課時間")
+    target_class = extract_card_value(soup, "修課班級")
+    enrollment_notes = extract_card_value(soup, "課程資訊")
+
+    if class_time:
+        basic_info["class_time"] = class_time
+    if target_class:
+        basic_info["target_class"] = target_class
+    if enrollment_notes:
+        basic_info["enrollment_notes"] = enrollment_notes
+
+    return basic_info
+
+
+def extract_accordion_section(soup: BeautifulSoup, label: str) -> str:
+    accordion = soup.select_one("#courseDetailsAccordion")
+    if not accordion:
+        return ""
+
+    for item in accordion.select(".accordion-item"):
+        button = item.select_one(".accordion-button")
+        if not button or label not in clean_text(button):
+            continue
+        body = item.select_one(".accordion-body")
+        return clean_text(body)
+    return ""
+
+
+def extract_grading_items(soup: BeautifulSoup) -> list[dict[str, str]]:
+    grading_items: list[dict[str, str]] = []
+    accordion = soup.select_one("#courseDetailsAccordion")
+    if not accordion:
+        return grading_items
+
+    grading_item = None
+    for item in accordion.select(".accordion-item"):
+        button = item.select_one(".accordion-button")
+        if button and "評分方式" in clean_text(button):
+            grading_item = item
+            break
+
+    if not grading_item:
+        return grading_items
+
+    for row in grading_item.select("tr"):
+        cols = [clean_text(col) for col in row.find_all(["td", "th"])]
+        cols = [col for col in cols if col]
+        if len(cols) >= 2 and not any("評分" in col for col in cols[:1]):
+            grading_items.append(
+                {
+                    "method": cols[0],
+                    "percentage": cols[1],
+                    "description": cols[2] if len(cols) > 2 else "",
+                }
+            )
+
+    return grading_items
+
+
+def extract_selection_records(soup: BeautifulSoup) -> list[dict[str, Any]]:
+    selection_records: list[dict[str, Any]] = []
+    scripts = soup.find_all("script")
+    for script in scripts:
+        if not isinstance(script, Tag):
+            continue
+        script_text = script.get_text()
+        if "google.visualization.arrayToDataTable" not in script_text:
+            continue
+        pattern = r"google\.visualization\.arrayToDataTable\(\s*\[\s*([\s\S]*?)\s*\]\s*\)"
+        match = re.search(pattern, script_text, re.DOTALL)
+        if not match:
+            continue
+        row_pattern = r"\[\s*'([^']+)'\s*,\s*(-?\d+)\s*,\s*(-?\d+)\s*,\s*(-?\d+)\s*\]"
+        for date, enrolled, remaining, registered in re.findall(row_pattern, match.group(1)):
+            selection_records.append(
+                {
+                    "date": date,
+                    "enrolled": int(enrolled),
+                    "remaining": int(remaining),
+                    "registered": int(registered),
+                }
+            )
+        break
+    return selection_records
 
 
 async def main() -> None:
@@ -118,7 +254,7 @@ async def fetch_single_course_detail(
     """
     爬取「單一」課程詳細資訊的邏輯
     """
-    url = f"https://course.thu.edu.tw/view/{academic_year}/{academic_semester}/{course_code}/"
+    url = f"{BASE_URL}/view/{academic_year}/{academic_semester}/{course_code}/"
 
     async with semaphore:
         try:
@@ -129,154 +265,31 @@ async def fetch_single_course_detail(
                     return None
                 html = await response.text()
 
-            # --- BeautifulSoup 解析邏輯 ---
             soup = BeautifulSoup(html, "html.parser")
 
+            page_text = clean_text(soup.select_one("#content")) or clean_text(soup.body)
             closed_notice = soup.find(class_="warning closable")
-            if closed_notice:
-                return {"course_code": course_code, "is_closed": True}
-
-            table = soup.find("table")
-            if not isinstance(table, Tag):
-                # print(f"No table found for course {course_code}")
-                return None
-
-            rows = table.find_all("tr")
-            grading_data = []
-
-            for row in rows:
-                if isinstance(row, Tag):
-                    cols = [
-                        col.get_text(strip=True) for col in row.find_all(["td", "th"])
-                    ]
-                    if cols:
-                        grading_data.append(cols)
-
-            grading_items = []
-            if grading_data and len(grading_data) > 1:
-                for row in grading_data[1:]:
-                    if len(row) >= 3:
-                        grading_item = {
-                            "method": row[0],
-                            "percentage": row[1],
-                            "description": row[2] if len(row) > 2 else "",
-                        }
-                        grading_items.append(grading_item)
-
-            selection_records = []
-            scripts = soup.find_all("script")
-            for script in scripts:
-                if isinstance(script, Tag):
-                    script_text = script.get_text()
-                    if "google.visualization.arrayToDataTable" in script_text:
-                        import re
-
-                        pattern = r"google\.visualization\.arrayToDataTable\(\s*\[\s*([\s\S]*?)\s*\]\s*\)"
-                        match = re.search(pattern, script_text, re.DOTALL)
-                        if match:
-                            data_content = match.group(1)
-                            row_pattern = (
-                                r"\[\s*'([^']+)',\s*(\d+),\s*(\d+),\s*(\d+)\s*\]"
-                            )
-                            matches = re.findall(row_pattern, data_content)
-                            for match_data in matches:
-                                date, enrolled, remaining, registered = match_data
-                                selection_records.append(
-                                    {
-                                        "date": date,
-                                        "enrolled": int(enrolled),
-                                        "remaining": int(remaining),
-                                        "registered": int(registered),
-                                    }
-                                )
-                            break
-
-            teacher_list = []
-            teacher_section = soup.select_one(
-                "#mainContent > div:nth-child(4) > div:nth-child(1)"
+            hero_text = clean_text(soup.select_one("#course-hero"))
+            is_closed = bool(
+                closed_notice
+                or "本課程已於" in page_text
+                or "停開" in hero_text
             )
-            if teacher_section:
-                teacher_links = teacher_section.find_all("a")
-                teacher_list = [
-                    a.get_text(strip=True) if a.get_text(strip=True) != "" else None
-                    for a in teacher_links
-                ]
 
-            teaching_goal = None
-            course_description = None
+            teaching_goal = extract_accordion_section(soup, "教育目標")
+            course_description = extract_accordion_section(soup, "課程概述")
+            if not course_description:
+                course_description = extract_accordion_section(soup, "課程描述")
 
-            content_div = soup.select_one(
-                "#mainContent > div:nth-child(4) > div.thirteen.columns"
-            )
-            if content_div:
-                for h2 in content_div.find_all("h2", class_="title"):
-                    title_text = h2.get_text(strip=True)
-                    next_p = h2.find_next_sibling("p")
-                    if next_p:
-                        content = next_p.get_text(strip=True)
-                        if "教育目標" in title_text:
-                            teaching_goal = content
-                        elif "課程概述" in title_text:
-                            course_description = content
-
-            basic_info = {}
-            basic_info_element = soup.select_one(
-                "#mainContent > div:nth-child(5) > div:nth-child(2) > div:nth-child(1) > p"
-            )
-            if basic_info_element:
-                parts = []
-                for element in basic_info_element.contents:
-                    if isinstance(element, NavigableString):
-                        text = element.strip()
-                        if text:
-                            parts.append(text)
-                    elif isinstance(element, Tag) and element.name == "br":
-                        parts.append("\n")
-
-                basic_info_text = "".join(parts)
-                lines = [
-                    line.strip() for line in basic_info_text.split("\n") if line.strip()
-                ]
-
-                for line in lines:
-                    if "：" in line:
-                        key, value = line.split("：", 1)
-                        key = key.strip()
-                        value = value.strip()
-                        if key in ["選修課", "必修課"]:
-                            basic_info["course_type"] = key
-                            if "，學分數" in line:
-                                credits_part = (
-                                    line.split("，學分數：")[1]
-                                    if "，學分數：" in line
-                                    else value
-                                )
-                                basic_info["credits"] = credits_part.strip()
-                        elif key == "學分數":
-                            basic_info["credits"] = value
-                        elif key == "上課時間":
-                            basic_info["class_time"] = value
-                        elif key == "修課班級":
-                            basic_info["target_class"] = value
-                        elif key == "修課年級":
-                            basic_info["target_grade"] = value
-                        elif key == "選課備註":
-                            basic_info["enrollment_notes"] = value
-
-                if not basic_info:
-                    basic_info["raw_text"] = basic_info_text
-
-            # 重要：將原本的 print 移除，以免干擾進度條顯示
-            # print(f"Success fetching course detail for {course_code}")
             return {
                 "course_code": course_code,
-                "is_closed": bool(closed_notice),
-                "teachers": teacher_list,
-                "grading_items": grading_items,
-                "selection_records": selection_records,
+                "is_closed": is_closed,
+                "teachers": extract_teachers(soup),
+                "grading_items": extract_grading_items(soup),
+                "selection_records": extract_selection_records(soup),
                 "teaching_goal": teaching_goal,
                 "course_description": course_description,
-                "basic_info": basic_info,
+                "basic_info": extract_hero_basic_info(soup),
             }
 
         except Exception as e:

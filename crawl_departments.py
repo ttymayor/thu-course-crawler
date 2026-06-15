@@ -1,4 +1,6 @@
+import io
 import logging
+import re
 
 import pandas as pd
 import requests
@@ -12,6 +14,78 @@ from utils.logger import setup_logger, get_logger
 setup_logger()
 logger = get_logger(__name__)
 
+BASE_URL = "https://course.thu.edu.tw"
+
+
+def clean_text(element) -> str:
+    if not element:
+        return ""
+    return re.sub(r"\s+", " ", element.get_text(" ", strip=True)).strip()
+
+
+def extract_dept_code(href: str | None) -> str:
+    if not href:
+        return ""
+    return href.strip("/").split("/")[-1]
+
+
+def fetch_course_info_df(
+    session: requests.Session, academic_year: str, academic_semester: str
+) -> pd.DataFrame:
+    url = f"{BASE_URL}/opendatadownload/list/{academic_year}/{academic_semester}/"
+    response = session.get(url, timeout=30)
+    response.raise_for_status()
+    return pd.read_csv(
+        io.StringIO(response.text),
+        dtype={"選課代碼": str, "開課系所代碼": str},
+        on_bad_lines="skip",
+    )
+
+
+def fetch_college_department_map(
+    session: requests.Session,
+    academic_year: str,
+    academic_semester: str,
+    category_code: str,
+) -> dict[str, str]:
+    """Read department links from the redesigned DataTables course API."""
+    try:
+        response = session.get(
+            f"{BASE_URL}/api/course-list",
+            params={
+                "year": academic_year,
+                "term": academic_semester,
+                "college": category_code,
+                "draw": 1,
+                "start": 0,
+                "length": 5000,
+            },
+            timeout=30,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except Exception as e:
+        logger.warning(
+            f"[fetch_dept_categories] Could not fetch college API for {category_code}: {e}"
+        )
+        return {}
+
+    dept_map: dict[str, str] = {}
+    for row in payload.get("data", []):
+        if not isinstance(row, list) or len(row) < 7:
+            continue
+        memo_soup = BeautifulSoup(str(row[6]), "html.parser")
+        for link in memo_soup.find_all("a", href=True):
+            href = link.get("href", "")
+            pattern = rf"/view-dept/{academic_year}/{academic_semester}/([^/]+)/?"
+            match = re.search(pattern, href)
+            if not match:
+                continue
+            dept_code = match.group(1)
+            dept_name = clean_text(link)
+            if dept_code and dept_name:
+                dept_map[dept_code] = dept_name
+    return dept_map
 
 
 
@@ -38,186 +112,111 @@ def main() -> None:
 def fetch_dept_categories() -> tuple[pd.DataFrame, pd.DataFrame]:
     """獲取所有系所分類和系所資訊"""
     try:
-        base_url = "https://course.thu.edu.tw"
-        response = requests.get(
-            f"{base_url}/view-dept/{config.academic_year}/{config.academic_semester}/"
+        session = requests.Session()
+        response = session.get(
+            f"{BASE_URL}/view-dept/{config.academic_year}/{config.academic_semester}/",
+            timeout=30,
         )
         response.raise_for_status()
 
         soup = BeautifulSoup(response.text, "html.parser")
-        dept_category_list = soup.find(class_="side_bar_menu")
-
-        if not dept_category_list:
-            logger.error("[fetch_dept_categories] Could not find side_bar_menu")
-            return pd.DataFrame(), pd.DataFrame()
-
-        dept_categories = dept_category_list.find_all("a")
-
         categories_data = []
-        departments_data = []
-        everything_category = None
+        category_dept_lookup: dict[str, dict[str, str]] = {}
 
+        dept_categories = soup.select("#dept-nav-colleges a[href]")
         logger.info(f"[fetch_dept_categories] Found {len(dept_categories)} categories")
 
-        # 第一階段：處理一般分類
         for category in dept_categories:
-            category_name = category.text.strip()
+            category_name = clean_text(category.select_one(".flex-fill")) or clean_text(category)
             category_href = category.get("href")
-
             if not category_href:
                 continue
 
-            # 如果是 everything，先儲存起來，稍後處理
-            if (
-                category_href
-                == f"/view-dept/{config.academic_year}/{config.academic_semester}/everything"
-            ):
-                everything_category = category
+            category_code = extract_dept_code(category_href)
+            if not category_code:
                 continue
 
-            # 從 URL 提取 category_code
-            # URL 格式: /view-dept/114/1/{category_code}
-            category_code = category_href.split("/")[-1]
-
-            # 儲存分類資訊
-            category_info = {
-                "category_code": category_code,
-                "category_name": category_name,
-                "category_url": f"{base_url}{category_href}",
-                "category_href": category_href,
-            }
-            categories_data.append(category_info)
-
+            categories_data.append(
+                {
+                    "category_code": category_code,
+                    "category_name": category_name,
+                    "category_url": f"{BASE_URL}{category_href}",
+                    "category_href": category_href,
+                }
+            )
             logger.info(
-                f"[fetch_dept_categories] Processing category: {category_name} (code: {category_code})"
+                f"[fetch_dept_categories] Found category: {category_name} (code: {category_code})"
+            )
+            category_dept_lookup[category_code] = fetch_college_department_map(
+                session,
+                config.academic_year,
+                config.academic_semester,
+                category_code,
             )
 
-            # 獲取該分類下的所有系所
-            try:
-                category_url = f"{base_url}{category_href}"
-                category_response = requests.get(category_url)
-                category_response.raise_for_status()
-                category_soup = BeautifulSoup(category_response.text, "html.parser")
+        course_info_df = fetch_course_info_df(
+            session, config.academic_year, config.academic_semester
+        )
+        if course_info_df.empty:
+            logger.warning("[fetch_dept_categories] Course info CSV is empty")
+            return pd.DataFrame(categories_data), pd.DataFrame()
 
-                # 查找系所表格
-                dept_table = category_soup.find("table")
+        departments_source = (
+            course_info_df[["開課系所代碼", "開課系所名稱"]]
+            .dropna()
+            .drop_duplicates()
+            .sort_values("開課系所代碼")
+        )
 
-                if dept_table:
-                    dept_rows = dept_table.find("tbody")
-                    if dept_rows:
-                        dept_rows = dept_rows.find_all("tr")
-                    else:
-                        dept_rows = dept_table.find_all("tr")[1:]  # 跳過表頭
-
-                    for row in dept_rows:
-                        cells = row.find_all("td")
-                        if len(cells) >= 2:
-                            # 第一個 cell 包含系所名稱和連結
-                            dept_link = cells[0].find("a")
-                            if dept_link:
-                                dept_name = dept_link.text.strip()
-                                dept_href = dept_link.get("href")
-
-                                # 從 URL 提取 department_code
-                                # URL 格式: /view-dept/114/1/{department_code}
-                                department_code = dept_href.split("/")[-1]
-
-                                # 第二個 cell 包含課程數量資訊
-                                # course_info = cells[1].text.strip()
-
-                                dept_info = {
-                                    "category_code": category_code,
-                                    "category_name": category_name,
-                                    "department_code": department_code,
-                                    "department_name": dept_name,
-                                    "department_url": f"{base_url}{dept_href}",
-                                    "department_href": dept_href,
-                                    # "course_info": course_info
-                                }
-                                departments_data.append(dept_info)
-                                logger.info(
-                                    f"  - Found department: {dept_name} (code: {department_code})"
-                                )
-
-            except Exception as e:
-                logger.error(
-                    f"[fetch_dept_categories] Error processing category {category_name}: {e}"
-                )
-                continue
-
-        # 第二階段：處理 everything 分類，找出未分類的系所
-        if everything_category:
-            logger.info(
-                "[fetch_dept_categories] Processing 'everything' category for uncategorized departments"
-            )
-
-            # 收集已經分類的系所代碼
-            categorized_dept_codes = set(
-                dept["department_code"] for dept in departments_data
-            )
-
-            try:
-                everything_href = everything_category.get("href")
-                everything_url = f"{base_url}{everything_href}"
-                everything_response = requests.get(everything_url)
-                everything_response.raise_for_status()
-                everything_soup = BeautifulSoup(everything_response.text, "html.parser")
-
-                # 查找系所表格
-                dept_table = everything_soup.find("table")
-
-                if dept_table:
-                    dept_rows = dept_table.find("tbody")
-                    if dept_rows:
-                        dept_rows = dept_rows.find_all("tr")
-                    else:
-                        dept_rows = dept_table.find_all("tr")[1:]  # 跳過表頭
-
-                    uncategorized_depts = []
-                    for row in dept_rows:
-                        cells = row.find_all("td")
-                        if len(cells) >= 2:
-                            dept_link = cells[0].find("a")
-                            if dept_link:
-                                dept_name = dept_link.text.strip()
-                                dept_href = dept_link.get("href")
-                                department_code = dept_href.split("/")[-1]
-
-                                # 檢查是否已經在其他分類中
-                                if department_code not in categorized_dept_codes:
-                                    dept_info = {
-                                        "category_code": "uncategorized",
-                                        "category_name": "未分類",
-                                        "department_code": department_code,
-                                        "department_name": dept_name,
-                                        "department_url": f"{base_url}{dept_href}",
-                                        "department_href": dept_href,
-                                    }
-                                    uncategorized_depts.append(dept_info)
-                                    logger.info(
-                                        f"  - Found uncategorized department: {dept_name} (code: {department_code})"
-                                    )
-
-                    # 如果有未分類的系所，新增「未分類」分類
-                    if uncategorized_depts:
-                        uncategorized_category = {
-                            "category_code": "uncategorized",
-                            "category_name": "未分類",
-                            "category_url": f"{base_url}/view-dept/{config.academic_year}/{config.academic_semester}/everything",
-                            "category_href": f"/view-dept/{config.academic_year}/{config.academic_semester}/everything",
-                        }
-                        categories_data.append(uncategorized_category)
-                        departments_data.extend(uncategorized_depts)
-                        logger.info(
-                            f"[fetch_dept_categories] Added {len(uncategorized_depts)} uncategorized departments"
-                        )
-
-            except Exception as e:
-                logger.error(
-                    f"[fetch_dept_categories] Error processing 'everything' category: {e}"
+        category_names = {
+            category["category_code"]: category["category_name"]
+            for category in categories_data
+        }
+        category_by_dept: dict[str, tuple[str, str]] = {}
+        for category_code, dept_map in category_dept_lookup.items():
+            for dept_code in dept_map:
+                category_by_dept.setdefault(
+                    dept_code, (category_code, category_names.get(category_code, ""))
                 )
 
-        # 建立 DataFrames
+        departments_data = []
+        used_uncategorized = False
+        for _, row in departments_source.iterrows():
+            department_code = str(row["開課系所代碼"]).strip()
+            department_name = str(row["開課系所名稱"]).strip()
+            category_code, category_name = category_by_dept.get(
+                department_code, ("uncategorized", "未分類")
+            )
+            if category_code == "uncategorized":
+                used_uncategorized = True
+
+            department_href = (
+                f"/view-dept/{config.academic_year}/{config.academic_semester}/{department_code}/"
+            )
+            departments_data.append(
+                {
+                    "category_code": category_code,
+                    "category_name": category_name,
+                    "department_code": department_code,
+                    "department_name": department_name,
+                    "department_url": f"{BASE_URL}{department_href}",
+                    "department_href": department_href,
+                }
+            )
+
+        if used_uncategorized and not any(
+            category["category_code"] == "uncategorized" for category in categories_data
+        ):
+            category_href = f"/view-dept/{config.academic_year}/{config.academic_semester}/"
+            categories_data.append(
+                {
+                    "category_code": "uncategorized",
+                    "category_name": "未分類",
+                    "category_url": f"{BASE_URL}{category_href}",
+                    "category_href": category_href,
+                }
+            )
+
         categories_df = pd.DataFrame(categories_data)
         departments_df = pd.DataFrame(departments_data)
 
