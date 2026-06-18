@@ -11,6 +11,19 @@ on:
         options:
           - prod
           - dev
+      academic_year:
+        description: Academic year to crawl
+        required: true
+        default: "115"
+        type: string
+      academic_semester:
+        description: Academic semester to crawl
+        required: true
+        default: "1"
+        type: choice
+        options:
+          - "1"
+          - "2"
 
 jobs:
   crawl-schedule:
@@ -20,6 +33,8 @@ jobs:
       DB_URI: ${{ secrets.DB_URI }}
       DB_NAME: ${{ secrets.DB_NAME || 'thu_course' }}
       DB_ENV: ${{ inputs.db_env }}
+      ACADEMIC_YEAR: ${{ inputs.academic_year }}
+      ACADEMIC_SEMESTER: ${{ inputs.academic_semester }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

@@ -11,6 +11,29 @@ on:
         options:
           - prod
           - dev
+      academic_year:
+        description: Academic year used when academic_terms is empty
+        required: true
+        default: "115"
+        type: string
+      academic_semester:
+        description: Academic semester used when academic_terms is empty
+        required: true
+        default: "1"
+        type: choice
+        options:
+          - "1"
+          - "2"
+      academic_terms:
+        description: Optional comma-separated terms, for example 114-1,114-2,115-1
+        required: false
+        default: ""
+        type: string
+      refresh_all_terms:
+        description: Recrawl every academic_terms entry instead of skipping existing historical terms
+        required: true
+        default: false
+        type: boolean
 
 jobs:
   crawl-course-and-departments:
@@ -20,6 +43,10 @@ jobs:
       DB_URI: ${{ secrets.DB_URI }}
       DB_NAME: ${{ secrets.DB_NAME || 'thu_course' }}
       DB_ENV: ${{ inputs.db_env }}
+      ACADEMIC_YEAR: ${{ inputs.academic_year }}
+      ACADEMIC_SEMESTER: ${{ inputs.academic_semester }}
+      ACADEMIC_TERMS: ${{ inputs.academic_terms }}
+      REFRESH_ALL_TERMS: ${{ inputs.refresh_all_terms }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
