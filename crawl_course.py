@@ -1,6 +1,5 @@
 import asyncio
 import io
-import logging
 import re
 from typing import Any, Dict, List, Optional
 
@@ -8,16 +7,6 @@ import aiohttp
 import pandas as pd
 from bs4 import BeautifulSoup
 from bs4.element import Tag
-from rich.progress import (
-    BarColumn,
-    MofNCompleteColumn,
-    Progress,
-    SpinnerColumn,
-    TaskProgressColumn,
-    TextColumn,
-    TimeElapsedColumn,
-    TimeRemainingColumn,
-)
 
 from config import config
 from db import course_term_exists, save_merged_courses_to_db
@@ -372,48 +361,51 @@ async def fetch_course_details_concurrently(
     academic_year: str, academic_semester: str, course_codes: List[str]
 ) -> pd.DataFrame:
     """
-    管理所有並發任務的函式，並加入 Rich Progress Bar
+    管理所有並發任務的函式，並以一般 log 顯示進度
     """
-
-    # 定義進度條樣式
-    progress = Progress(
-        SpinnerColumn(),  # 轉圈圈動畫
-        TextColumn("[progress.description]{task.description}"),  # 任務描述
-        BarColumn(),  # 進度條本體
-        TaskProgressColumn(),  # 百分比 (e.g., 50%)
-        MofNCompleteColumn(),  # 完成數/總數 (e.g., 1500/3000)
-        TimeElapsedColumn(),  # 已過時間
-        TimeRemainingColumn(),  # 剩餘時間估算
-    )
-
     concurrency_limit = config.concurrency_limit
     semaphore = asyncio.Semaphore(concurrency_limit)
+    total = len(course_codes)
+    completed = 0
+    succeeded = 0
+    failed = 0
+    progress_log_interval = 100
+
+    logger.info(
+        f"[crawl_course] Fetching {total} course details "
+        f"(concurrency: {concurrency_limit})"
+    )
 
     async with aiohttp.ClientSession() as session:
-        # 使用 progress context manager
-        with progress:
-            task_id = progress.add_task(
-                f"[cyan]fetching course details (concurrency: {concurrency_limit})...",
-                total=len(course_codes),
+        async def worker(code: str):
+            nonlocal completed, succeeded, failed
+
+            result = await fetch_single_course_detail(
+                session, semaphore, academic_year, academic_semester, code
             )
+            completed += 1
+            if result is None:
+                failed += 1
+            else:
+                succeeded += 1
 
-            # 建立一個 wrapper 來處理單個任務完成後的進度更新
-            async def worker(code: str):
-                result = await fetch_single_course_detail(
-                    session, semaphore, academic_year, academic_semester, code
+            if completed == total or completed % progress_log_interval == 0:
+                logger.info(
+                    f"[crawl_course] Course detail progress: {completed}/{total} "
+                    f"(success: {succeeded}, failed: {failed})"
                 )
-                # 每完成一個任務，進度條 +1
-                progress.advance(task_id)
-                return result
 
-            # 建立所有 worker 任務
-            tasks = [worker(code) for code in course_codes]
+            return result
 
-            # 等待所有任務完成
-            results = await asyncio.gather(*tasks)
+        tasks = [worker(code) for code in course_codes]
+        results = await asyncio.gather(*tasks)
 
     # 過濾掉失敗的 (None) 結果
     valid_results = [r for r in results if r is not None]
+    logger.info(
+        f"[crawl_course] Course detail fetch completed: {len(valid_results)}/{total} "
+        f"succeeded, {failed} failed"
+    )
 
     columns = [
         "academic_year",
