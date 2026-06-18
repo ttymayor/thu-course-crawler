@@ -2,11 +2,24 @@ name: crawl_schedule
 
 on:
   workflow_dispatch:
+    inputs:
+      db_env:
+        description: MongoDB collection environment
+        required: true
+        default: prod
+        type: choice
+        options:
+          - prod
+          - dev
 
 jobs:
   crawl-schedule:
     name: crawl_schedule
     runs-on: ubuntu-latest
+    env:
+      DB_URI: ${{ secrets.DB_URI }}
+      DB_NAME: ${{ secrets.DB_NAME || 'thu_course' }}
+      DB_ENV: ${{ inputs.db_env }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -23,12 +36,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv sync
-
-      - name: Create .env file
-        run: |
-          echo "DB_URI=${{ secrets.DB_URI }}" >> .env
-          echo "DB_NAME=${{ secrets.DB_NAME || 'thu_course' }}" >> .env
+          uv sync --locked
 
       - name: Run schedule crawler
         run: |

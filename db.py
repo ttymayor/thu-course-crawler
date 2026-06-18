@@ -1,5 +1,6 @@
 import logging
 import math
+from typing import Any
 
 import pandas as pd
 import pymongo
@@ -40,8 +41,88 @@ def get_df_term_filter(df: pd.DataFrame) -> dict:
     }
 
 
+def parse_numeric_term(value: Any) -> int | None:
+    """Return a normalized academic term value when it is numeric."""
+    if value is None:
+        return None
+    raw_value = str(value).strip()
+    if not raw_value.isdigit():
+        return None
+    return int(raw_value)
+
+
+def cleanup_course_term_documents(collection) -> None:
+    """
+    Normalize legacy course term fields before enforcing the compound unique index.
+
+    Older crawls may have stored academic_year / academic_semester as strings.
+    MongoDB treats "1" and 1 as different unique-index values, so repeated crawls
+    can create logical duplicates. Keep the newest document for each normalized
+    term/course identity and rewrite its term fields as integers.
+    """
+    grouped_docs: dict[tuple[int, int, str], list[dict[str, Any]]] = {}
+
+    for doc in collection.find(
+        {
+            "academic_year": {"$exists": True},
+            "academic_semester": {"$exists": True},
+            "course_code": {"$exists": True},
+        },
+        {"_id": 1, "academic_year": 1, "academic_semester": 1, "course_code": 1},
+    ):
+        academic_year = parse_numeric_term(doc.get("academic_year"))
+        academic_semester = parse_numeric_term(doc.get("academic_semester"))
+        course_code = str(doc.get("course_code", "")).strip()
+        if academic_year is None or academic_semester is None or not course_code:
+            continue
+
+        grouped_docs.setdefault(
+            (academic_year, academic_semester, course_code), []
+        ).append(doc)
+
+    normalized_count = 0
+    duplicate_count = 0
+
+    for (academic_year, academic_semester, _course_code), docs in grouped_docs.items():
+        canonical_docs = [
+            doc
+            for doc in docs
+            if doc.get("academic_year") == academic_year
+            and doc.get("academic_semester") == academic_semester
+        ]
+        keep_doc = max(canonical_docs or docs, key=lambda doc: str(doc["_id"]))
+        duplicate_ids = [doc["_id"] for doc in docs if doc["_id"] != keep_doc["_id"]]
+
+        if duplicate_ids:
+            delete_result = collection.delete_many({"_id": {"$in": duplicate_ids}})
+            duplicate_count += delete_result.deleted_count
+
+        if (
+            keep_doc.get("academic_year") != academic_year
+            or keep_doc.get("academic_semester") != academic_semester
+        ):
+            collection.update_one(
+                {"_id": keep_doc["_id"]},
+                {
+                    "$set": {
+                        "academic_year": academic_year,
+                        "academic_semester": academic_semester,
+                    }
+                },
+            )
+            normalized_count += 1
+
+    if duplicate_count or normalized_count:
+        logger.info(
+            f"Normalized course term documents in {collection.name}: "
+            f"{normalized_count} updated, {duplicate_count} duplicates removed"
+        )
+
+
 def ensure_course_term_index(collection) -> None:
     """Replace legacy course_code uniqueness with term-aware uniqueness."""
+    cleanup_course_term_documents(collection)
+
     for index_name, index_info in collection.index_information().items():
         if index_name == "_id_":
             continue
