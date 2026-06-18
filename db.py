@@ -13,10 +13,89 @@ logger = get_logger(__name__)
 
 myclient: pymongo.MongoClient[dict] = pymongo.MongoClient(config.db_uri)
 
+COURSE_TERM_INDEX = [("academic_year", 1), ("academic_semester", 1), ("course_code", 1)]
+COURSE_TERM_INDEX_NAME = "academic_term_course_code_unique"
+NO_DATA_VALUES = {"", "無資料", "無", "未定", "None", "none", "N/A", "n/a"}
+
 
 def get_collection_name(base_name: str) -> str:
     """根據環境變數返回資料表名稱"""
     return config.get_collection_name(base_name)
+
+
+def get_course_term_filter(row: dict) -> dict:
+    """Build the compound course identity filter used by course collections."""
+    return {
+        "academic_year": int(row["academic_year"]),
+        "academic_semester": int(row["academic_semester"]),
+        "course_code": row["course_code"],
+    }
+
+
+def get_df_term_filter(df: pd.DataFrame) -> dict:
+    """Return the term filter for a DataFrame containing one academic term."""
+    return {
+        "academic_year": int(df["academic_year"].iloc[0]),
+        "academic_semester": int(df["academic_semester"].iloc[0]),
+    }
+
+
+def ensure_course_term_index(collection) -> None:
+    """Replace legacy course_code uniqueness with term-aware uniqueness."""
+    for index_name, index_info in collection.index_information().items():
+        if index_name == "_id_":
+            continue
+        if index_info.get("key") == [("course_code", 1)] and index_info.get("unique"):
+            logger.warning(
+                f"Dropping legacy unique index '{index_name}' before creating term-aware index."
+            )
+            collection.drop_index(index_name)
+
+    collection.create_index(
+        COURSE_TERM_INDEX,
+        unique=True,
+        name=COURSE_TERM_INDEX_NAME,
+    )
+
+
+def normalize_no_data_value(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, float) and math.isnan(value):
+        return ""
+    value = str(value).strip()
+    return "" if value in NO_DATA_VALUES else value
+
+
+def normalize_basic_info(raw_basic) -> dict:
+    if not isinstance(raw_basic, dict):
+        return {}
+
+    basic_info = raw_basic.copy()
+    for key in ("class_time", "target_class", "target_grade", "enrollment_notes"):
+        basic_info[key] = normalize_no_data_value(basic_info.get(key))
+
+    return basic_info
+
+
+def course_term_exists(academic_year: str, academic_semester: str) -> bool:
+    """Return whether the merged courses collection already has this term."""
+    assert config.db_name, "DB_NAME must be set in .env file"
+
+    collection_name = get_collection_name("courses")
+    mydb = myclient[config.db_name]
+    collection = mydb[collection_name]
+
+    return (
+        collection.count_documents(
+            {
+                "academic_year": int(academic_year),
+                "academic_semester": int(academic_semester),
+            },
+            limit=1,
+        )
+        > 0
+    )
 
 
 def save_merged_courses_to_db(df: pd.DataFrame) -> None:
@@ -38,22 +117,14 @@ def save_merged_courses_to_db(df: pd.DataFrame) -> None:
         mydb = myclient[config.db_name]
         collection = mydb[collection_name]
 
-        # 建立索引
-        try:
-            collection.create_index("course_code", unique=True)
-        except pymongo.errors.OperationFailure as e:
-            if e.code == 86:  # IndexKeySpecsConflict
-                logger.warning(
-                    f"Index conflict detected in {collection_name}. Dropping existing index 'course_code_1' and recreating."
-                )
-                collection.drop_index("course_code_1")
-                collection.create_index("course_code", unique=True)
-            else:
-                raise e
+        ensure_course_term_index(collection)
 
         # 1. 刪除不在目前資料中的舊資料 (Sync)
+        term_filter = get_df_term_filter(df)
         current_codes = df["course_code"].tolist()
-        delete_result = collection.delete_many({"course_code": {"$nin": current_codes}})
+        delete_result = collection.delete_many(
+            {**term_filter, "course_code": {"$nin": current_codes}}
+        )
         logger.info(f"Deleted {delete_result.deleted_count} stale documents from {collection_name}")
 
         ops = []
@@ -88,8 +159,7 @@ def save_merged_courses_to_db(df: pd.DataFrame) -> None:
             selection_records = raw_selection if isinstance(raw_selection, list) else []
 
             # 4. 處理 basic_info (確保是 dict)
-            raw_basic = row.get("basic_info")
-            basic_info = raw_basic if isinstance(raw_basic, dict) else {}
+            basic_info = normalize_basic_info(row.get("basic_info"))
 
             # 5. 處理其他可能為 NaN 的欄位 (因為 Left Join 可能產生 NaN)
             def clean_nan(val, default):
@@ -103,6 +173,8 @@ def save_merged_courses_to_db(df: pd.DataFrame) -> None:
             # 建構最終要寫入的 Document
             # 先複製所有欄位，然後覆蓋掉處理過的複雜欄位
             document = row.copy()
+            document["academic_year"] = int(row["academic_year"])
+            document["academic_semester"] = int(row["academic_semester"])
 
             # 覆蓋處理過的欄位
             document["grading_items"] = grading_items
@@ -120,7 +192,7 @@ def save_merged_courses_to_db(df: pd.DataFrame) -> None:
             # 加入批次操作
             ops.append(
                 UpdateOne(
-                    {"course_code": row["course_code"]}, {"$set": document}, upsert=True
+                    get_course_term_filter(row), {"$set": document}, upsert=True
                 )
             )
 
@@ -204,31 +276,24 @@ def save_course_info_to_db(df: pd.DataFrame) -> None:
         logger.info(f"Saving course info to DB (collection: {collection_name})...")
         mydb = myclient[config.db_name]
         collection = mydb[collection_name]
-        # 創建索引
-        try:
-            collection.create_index("course_code", unique=True)
-        except pymongo.errors.OperationFailure as e:
-            if e.code == 86:  # IndexKeySpecsConflict
-                logger.warning(
-                    f"Index conflict detected in {collection_name}. Dropping existing index 'course_code_1' and recreating."
-                )
-                collection.drop_index("course_code_1")
-                collection.create_index("course_code", unique=True)
-            else:
-                raise e
+        ensure_course_term_index(collection)
 
         # 1. 刪除不在目前資料中的舊資料 (Sync)
+        term_filter = get_df_term_filter(df)
         current_codes = df["course_code"].tolist()
-        delete_result = collection.delete_many({"course_code": {"$nin": current_codes}})
+        delete_result = collection.delete_many(
+            {**term_filter, "course_code": {"$nin": current_codes}}
+        )
         logger.info(f"Deleted {delete_result.deleted_count} stale documents from {collection_name}")
 
         ops = []
         records = df.to_dict(orient="records")
 
         for record in records:
-            course_code = record["course_code"]
+            record["academic_year"] = int(record["academic_year"])
+            record["academic_semester"] = int(record["academic_semester"])
             ops.append(
-                UpdateOne({"course_code": course_code}, {"$set": record}, upsert=True)
+                UpdateOne(get_course_term_filter(record), {"$set": record}, upsert=True)
             )
 
         if ops:
@@ -258,21 +323,14 @@ def save_course_detail_to_db(df: pd.DataFrame) -> None:
         mydb = myclient[config.db_name]
         collection = mydb[collection_name]
 
-        try:
-            collection.create_index("course_code", unique=True)
-        except pymongo.errors.OperationFailure as e:
-            if e.code == 86:  # IndexKeySpecsConflict
-                logger.warning(
-                    f"Index conflict detected in {collection_name}. Dropping existing index 'course_code_1' and recreating."
-                )
-                collection.drop_index("course_code_1")
-                collection.create_index("course_code", unique=True)
-            else:
-                raise e
+        ensure_course_term_index(collection)
 
         # 1. 刪除不在目前資料中的舊資料 (Sync)
+        term_filter = get_df_term_filter(df)
         current_codes = df["course_code"].tolist()
-        delete_result = collection.delete_many({"course_code": {"$nin": current_codes}})
+        delete_result = collection.delete_many(
+            {**term_filter, "course_code": {"$nin": current_codes}}
+        )
         logger.info(f"Deleted {delete_result.deleted_count} stale documents from {collection_name}")
 
         ops = []
@@ -295,6 +353,9 @@ def save_course_detail_to_db(df: pd.DataFrame) -> None:
                     )
 
             document = {
+                "academic_year": int(row["academic_year"]),
+                "academic_semester": int(row["academic_semester"]),
+                "course_code": row["course_code"],
                 "is_closed": row.get("is_closed", False),
                 "teachers": (
                     row["teachers"] if isinstance(row["teachers"], list) else []
@@ -313,14 +374,12 @@ def save_course_detail_to_db(df: pd.DataFrame) -> None:
                     if pd.notna(row["course_description"])
                     else ""
                 ),
-                "basic_info": (
-                    row["basic_info"] if isinstance(row["basic_info"], dict) else {}
-                ),
+                "basic_info": normalize_basic_info(row.get("basic_info")),
             }
 
             ops.append(
                 UpdateOne(
-                    {"course_code": row["course_code"]},  # 唯一鍵
+                    get_course_term_filter(row),
                     {"$set": document},
                     upsert=True,
                 )

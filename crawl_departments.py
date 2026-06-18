@@ -17,6 +17,11 @@ logger = get_logger(__name__)
 BASE_URL = "https://course.thu.edu.tw"
 
 
+def get_department_term() -> tuple[str, str]:
+    """Use the latest configured academic term for global department metadata."""
+    return max(config.academic_terms, key=lambda term: (int(term[0]), int(term[1])))
+
+
 def clean_text(element) -> str:
     if not element:
         return ""
@@ -112,9 +117,10 @@ def main() -> None:
 def fetch_dept_categories() -> tuple[pd.DataFrame, pd.DataFrame]:
     """獲取所有系所分類和系所資訊"""
     try:
+        academic_year, academic_semester = get_department_term()
         session = requests.Session()
         response = session.get(
-            f"{BASE_URL}/view-dept/{config.academic_year}/{config.academic_semester}/",
+            f"{BASE_URL}/view-dept/{academic_year}/{academic_semester}/",
             timeout=30,
         )
         response.raise_for_status()
@@ -149,13 +155,13 @@ def fetch_dept_categories() -> tuple[pd.DataFrame, pd.DataFrame]:
             )
             category_dept_lookup[category_code] = fetch_college_department_map(
                 session,
-                config.academic_year,
-                config.academic_semester,
+                academic_year,
+                academic_semester,
                 category_code,
             )
 
         course_info_df = fetch_course_info_df(
-            session, config.academic_year, config.academic_semester
+            session, academic_year, academic_semester
         )
         if course_info_df.empty:
             logger.warning("[fetch_dept_categories] Course info CSV is empty")
@@ -191,7 +197,7 @@ def fetch_dept_categories() -> tuple[pd.DataFrame, pd.DataFrame]:
                 used_uncategorized = True
 
             department_href = (
-                f"/view-dept/{config.academic_year}/{config.academic_semester}/{department_code}/"
+                f"/view-dept/{academic_year}/{academic_semester}/{department_code}/"
             )
             departments_data.append(
                 {
@@ -207,7 +213,7 @@ def fetch_dept_categories() -> tuple[pd.DataFrame, pd.DataFrame]:
         if used_uncategorized and not any(
             category["category_code"] == "uncategorized" for category in categories_data
         ):
-            category_href = f"/view-dept/{config.academic_year}/{config.academic_semester}/"
+            category_href = f"/view-dept/{academic_year}/{academic_semester}/"
             categories_data.append(
                 {
                     "category_code": "uncategorized",

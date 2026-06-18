@@ -20,7 +20,7 @@ from rich.progress import (
 )
 
 from config import config
-from db import save_merged_courses_to_db
+from db import course_term_exists, save_merged_courses_to_db
 from utils.dataframe_utils import process_course_info_df
 
 from utils.logger import setup_logger, get_logger
@@ -33,6 +33,7 @@ setup_logger()
 logger = get_logger(__name__)
 
 BASE_URL = "https://course.thu.edu.tw"
+NO_DATA_VALUES = {"", "無資料", "無", "未定", "None", "none", "N/A", "n/a"}
 
 
 def clean_text(element: Optional[Tag]) -> str:
@@ -52,6 +53,34 @@ def extract_card_value(soup: BeautifulSoup, label: str) -> str:
         if heading and label in heading.get_text(strip=True):
             return text_after_label(clean_text(card.select_one(".card-body")), label)
     return ""
+
+
+def normalize_source_value(value: str) -> str:
+    value = re.sub(r"\s+", " ", value).strip()
+    return "" if value in NO_DATA_VALUES else value
+
+
+def split_target_class_and_grade(target_class: str) -> tuple[str, str]:
+    target_class = normalize_source_value(target_class)
+    if not target_class:
+        return "", ""
+
+    parts = [
+        normalize_source_value(part)
+        for part in re.split(r"\s*[·‧•]\s*", target_class)
+        if normalize_source_value(part)
+    ]
+    if len(parts) < 2:
+        return target_class, ""
+
+    grade_pattern = re.compile(r"(?:\d+|[一二三四五六七八九十]+)年級(?:以上|以下)?")
+    grade_parts = [part for part in parts if grade_pattern.search(part)]
+    if not grade_parts:
+        return target_class, ""
+
+    target_grade = grade_parts[-1]
+    class_parts = [part for part in parts if part != target_grade]
+    return " · ".join(class_parts), target_grade
 
 
 def extract_teachers(soup: BeautifulSoup) -> list[str]:
@@ -83,14 +112,18 @@ def extract_hero_basic_info(soup: BeautifulSoup) -> dict[str, str]:
             elif "學分" in badge_text:
                 basic_info["credits"] = badge_text.replace("學分", "").strip()
 
-    class_time = extract_card_value(soup, "上課時間")
-    target_class = extract_card_value(soup, "修課班級")
-    enrollment_notes = extract_card_value(soup, "課程資訊")
+    class_time = normalize_source_value(extract_card_value(soup, "上課時間"))
+    target_class, target_grade = split_target_class_and_grade(
+        extract_card_value(soup, "修課班級")
+    )
+    enrollment_notes = normalize_source_value(extract_card_value(soup, "課程資訊"))
 
     if class_time:
         basic_info["class_time"] = class_time
     if target_class:
         basic_info["target_class"] = target_class
+    if target_grade:
+        basic_info["target_grade"] = target_grade
     if enrollment_notes:
         basic_info["enrollment_notes"] = enrollment_notes
 
@@ -169,27 +202,33 @@ def extract_selection_records(soup: BeautifulSoup) -> list[dict[str, Any]]:
     return selection_records
 
 
-async def main() -> None:
-    """獲取課程資訊和詳細資訊並整合為一張表"""
-    logger.info("[crawl_course] Start executing course crawler")
+async def crawl_term(academic_year: str, academic_semester: str) -> None:
+    """Fetch course info and details for one academic term."""
+    term_label = f"{academic_year}-{academic_semester}"
+    logger.info(f"[crawl_course] Start crawling term {term_label}")
 
     try:
         # --- 1. 爬取課程基本資訊 ---
-        logger.info("[crawl_course] fetching course basic info...")
-        course_info_df = await fetch_course_info(config.academic_year, config.academic_semester)
+        logger.info(f"[crawl_course] fetching course basic info for {term_label}...")
+        course_info_df = await fetch_course_info(academic_year, academic_semester)
 
         if course_info_df.empty:
             logger.error(
-                "[crawl_course] Failed to fetch course info, terminating program."
+                f"[crawl_course] Failed to fetch course info for {term_label}, skipping."
             )
             return
 
         course_info_df = process_course_info_df(course_info_df)
+        # The open-data CSV can contain malformed rows with blank term cells.
+        # The requested endpoint is the source of truth for the whole response.
+        course_info_df["academic_year"] = int(academic_year)
+        course_info_df["academic_semester"] = int(academic_semester)
+        course_info_df = course_info_df.dropna(subset=["course_code"])
         # save_course_info_to_db(course_info_df)
         logger.info(f"[crawl_course] Done! Fetched {len(course_info_df)} courses")
 
         # --- 2. 爬取課程詳細資訊 ---
-        logger.info("[crawl_course] fetching course details...")
+        logger.info(f"[crawl_course] fetching course details for {term_label}...")
         course_codes = course_info_df["course_code"].tolist()
 
         if config.db_env == "dev":
@@ -198,7 +237,7 @@ async def main() -> None:
 
         # 呼叫並發爬蟲函式
         course_detail_df = await fetch_course_details_concurrently(
-            config.academic_year, config.academic_semester, course_codes
+            academic_year, academic_semester, course_codes
         )
 
         # save_course_detail_to_db(course_detail_df)
@@ -207,19 +246,49 @@ async def main() -> None:
         # --- 3. 資料整併 (Merge) ---
         logger.info("[crawl_course] merging dataframes...")
         merged_df = pd.merge(
-            course_info_df, course_detail_df, on="course_code", how="left"
+            course_info_df,
+            course_detail_df,
+            on=["academic_year", "academic_semester", "course_code"],
+            how="left",
         )
 
         logger.info(f"[crawl_course] Done! Merged {len(merged_df)} courses")
         save_merged_courses_to_db(merged_df)
 
-        logger.info("[crawl_course] Done! Saved merged courses")
+        logger.info(f"[crawl_course] Done! Saved merged courses for {term_label}")
 
     except Exception as e:
-        logger.error(f"Course crawling failed: {e}")
+        logger.error(f"Course crawling failed for {term_label}: {e}")
         import traceback
 
         traceback.print_exc()
+
+
+async def main() -> None:
+    """獲取課程資訊和詳細資訊並整合為一張表"""
+    logger.info("[crawl_course] Start executing course crawler")
+
+    latest_term = max(
+        config.academic_terms,
+        key=lambda term: (int(term[0]), int(term[1])),
+    )
+
+    for academic_year, academic_semester in config.academic_terms:
+        term_label = f"{academic_year}-{academic_semester}"
+        is_latest_term = (academic_year, academic_semester) == latest_term
+
+        if (
+            not config.refresh_all_terms
+            and not is_latest_term
+            and course_term_exists(academic_year, academic_semester)
+        ):
+            logger.info(
+                f"[crawl_course] Skipping historical term {term_label}; "
+                "already exists in DB. Set REFRESH_ALL_TERMS=true to recrawl it."
+            )
+            continue
+
+        await crawl_term(academic_year, academic_semester)
 
     logger.info("[crawl_course] Course crawling completed!")
 
@@ -281,6 +350,8 @@ async def fetch_single_course_detail(
                 course_description = extract_accordion_section(soup, "課程描述")
 
             return {
+                "academic_year": int(academic_year),
+                "academic_semester": int(academic_semester),
                 "course_code": course_code,
                 "is_closed": is_closed,
                 "teachers": extract_teachers(soup),
@@ -344,7 +415,19 @@ async def fetch_course_details_concurrently(
     # 過濾掉失敗的 (None) 結果
     valid_results = [r for r in results if r is not None]
 
-    return pd.DataFrame(valid_results)
+    columns = [
+        "academic_year",
+        "academic_semester",
+        "course_code",
+        "is_closed",
+        "teachers",
+        "grading_items",
+        "selection_records",
+        "teaching_goal",
+        "course_description",
+        "basic_info",
+    ]
+    return pd.DataFrame(valid_results, columns=columns)
 
 
 if __name__ == "__main__":

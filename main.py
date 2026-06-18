@@ -25,8 +25,22 @@ def main() -> None:
             logger.error(f"Schedule crawling failed: {result_schedule.stderr}")
             return
 
-        # --- 2. 執行課程爬蟲（資訊+詳細資訊） ---
-        logger.info("[main] 2. Executing crawl_course.py...")
+        # --- 2. 執行系所爬蟲 ---
+        logger.info("[main] 2. Executing crawl_departments.py...")
+        result_departments = subprocess.run(
+            [sys.executable, "crawl_departments.py"],
+            capture_output=False,
+            text=True,
+        )
+
+        if result_departments.returncode == 0:
+            logger.info("[main] 2. Done")
+        else:
+            logger.error(f"Departments crawling failed: {result_departments.stderr}")
+            return
+
+        # --- 3. 執行課程爬蟲（資訊+詳細資訊） ---
+        logger.info("[main] 3. Executing crawl_course.py...")
         result_course = subprocess.run(
             [sys.executable, "crawl_course.py"],
             capture_output=False,
@@ -34,7 +48,7 @@ def main() -> None:
         )
 
         if result_course.returncode == 0:
-            logger.info("[main] 2. Done")
+            logger.info("[main] 3. Done")
         else:
             logger.error(f"Course crawling failed: {result_course.stderr}")
             return
