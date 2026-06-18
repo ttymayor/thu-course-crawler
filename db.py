@@ -45,8 +45,22 @@ def parse_numeric_term(value: Any) -> int | None:
     """Return a normalized academic term value when it is numeric."""
     if value is None:
         return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        if math.isfinite(value) and value.is_integer():
+            return int(value)
+        return None
     raw_value = str(value).strip()
     if not raw_value.isdigit():
+        try:
+            float_value = float(raw_value)
+        except ValueError:
+            return None
+        if math.isfinite(float_value) and float_value.is_integer():
+            return int(float_value)
         return None
     return int(raw_value)
 
