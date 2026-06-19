@@ -65,4 +65,22 @@ def process_course_info_df(df: pd.DataFrame) -> pd.DataFrame:
             "學分2": "credits_2",
         }
     )
+
+    required_columns = {"academic_year", "academic_semester", "course_code"}
+    missing_columns = required_columns - set(df.columns)
+    if missing_columns:
+        raise ValueError(f"Course info missing columns: {sorted(missing_columns)}")
+
+    course_codes = df["course_code"].fillna("").astype(str).str.strip()
+    valid_rows = (
+        pd.to_numeric(df["academic_year"], errors="coerce").notna()
+        & pd.to_numeric(df["academic_semester"], errors="coerce").notna()
+        & course_codes.str.fullmatch(r"\d{4}")
+    )
+
+    df = df.loc[valid_rows].copy()
+    df["course_code"] = course_codes.loc[valid_rows]
+    df["academic_year"] = pd.to_numeric(df["academic_year"]).astype(int)
+    df["academic_semester"] = pd.to_numeric(df["academic_semester"]).astype(int)
+
     return df
